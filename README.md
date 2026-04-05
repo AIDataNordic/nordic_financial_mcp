@@ -155,3 +155,4 @@ Chunking strategy: paragraphs are accumulated until reaching the 512-token model
 ---
 
 *Built and operated by a single developer as a passion project exploring the intersection of Nordic financial data, AI agents, and decentralized payment infrastructure.*
+# nordic_financial_mcp
