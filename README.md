@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
+
 # AIDataNorge
 
 A production-grade AI data infrastructure for Nordic financial markets — built from scratch on a self-hosted Linux server. Designed to serve autonomous AI agents with high-quality, semantically searchable data about Nordic publicly listed companies, macroeconomics, and regulatory filings.
