@@ -1,4 +1,29 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["AIDataNordic"]
+  "name": "Nordic Financial MCP",
+  "description": "Semantic search across 173,000+ Nordic financial documents — company filings, macro data, press releases from Norway, Sweden, Denmark, and Finland",
+  "maintainers": ["AIDataNordic"],
+  "categories": ["finance", "data-enrichment"],
+  "tags": ["nordic", "semantic-search", "financial-data", "norway", "sweden", "denmark", "finland", "rag", "qdrant"],
+  "examples": [
+    {
+      "title": "Search Equinor filings",
+      "description": "Find dividend information and financial results",
+      "command": "search_filings query=\"Equinor dividend\" limit=5"
+    },
+    {
+      "title": "Norwegian macro data",
+      "description": "Get housing market trends",
+      "command": "search_filings query=\"Norwegian house prices Q3 2024\" country=NO report_type=macro_summary"
+    },
+    {
+      "title": "Swedish press releases",
+      "description": "Recent announcements from Swedish companies",
+      "command": "search_filings query=\"strategic acquisition\" country=SE report_type=press_release limit=10"
+    }
+  ],
+  "transport": {
+    "type": "streamable-http",
+    "url": "https://mcp.aidatanorge.no/mcp"
+  }
 }
