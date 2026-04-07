@@ -1,0 +1,33 @@
+{
+  "name": "io.github.AIDataNordic/nordic-financial-mcp",
+  "version": "1.0.2",
+  "description": "Nordic financial data MCP server — semantic search across 173,000+ documents including company filings, press releases, and macro data for Norway, Sweden, Denmark, and Finland",
+  "vendor": {
+    "name": "AIDataNorge",
+    "url": "https://github.com/AIDataNordic"
+  },
+  "transport": {
+    "type": "streamable-http",
+    "endpoint": "https://mcp.aidatanorge.no/mcp"
+  },
+  "tools": [
+    {
+      "name": "search_filings",
+      "description": "Search Nordic financial database for company filings, press releases, and macroeconomic summaries"
+    },
+    {
+      "name": "get_company_info",
+      "description": "Look up Norwegian company in Brønnøysund Register"
+    },
+    {
+      "name": "get_market_data",
+      "description": "Fetch live market data and key financial metrics for Nordic listed companies"
+    },
+    {
+      "name": "ping",
+      "description": "Simple connectivity test"
+    }
+  ],
+  "categories": ["finance", "data", "search"],
+  "keywords": ["nordic", "financial-data", "semantic-search", "norway", "sweden", "denmark", "finland", "vector-database", "qdrant", "embeddings", "rag"]
+}
