@@ -1,7 +1,7 @@
 # Nordic Financial MCP
 
 > [!WARNING]
-> **Scheduled maintenance — 10. april 2026**
+> **Scheduled maintenance — 16. april 2026**
 > The `nordic_company_data` collection is currently being re-ingested from scratch.
 > Semantic search via MCP is temporarily unavailable. Expected completion: 12. april 2026.
 > Reason: Upgrading embedding model from `all-mpnet-base-v2` (768d) to `intfloat/e5-large-v2` (1024d) with hybrid dense+sparse search.
