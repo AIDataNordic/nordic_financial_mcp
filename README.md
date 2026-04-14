@@ -1,17 +1,15 @@
 # Nordic Financial MCP
 
 > [!WARNING]
-> **Scheduled maintenance — 16. april 2026**
-> The `nordic_company_data` collection is currently being re-ingested from scratch.
-> Semantic search via MCP is temporarily unavailable. Expected completion: 12. april 2026.
-> Reason: Upgrading embedding model from `all-mpnet-base-v2` (768d) to `intfloat/e5-large-v2` (1024d) with hybrid dense+sparse search.
+> **Scheduled maintenance — ongoing (April 2026)**
+> The `nordic_company_data` collection is currently being re-ingested with an enriched payload schema and upgraded embedding model (`intfloat/e5-large-v2`, 1024d) with hybrid dense+sparse search. Search results may be incomplete until ingestion is finished.
 
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
-A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 173,000+ vectors across exchange filings, company reports, macro data, and commodity prices.
+A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 300,000+ vectors across exchange filings, company reports, macro data, and commodity prices.
 
-**Live endpoint:** `https://mcp.aidatanorge.no/mcp`
-**Transport:** `streamable-http`
+**Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
+**Transport:** `streamable-http`  
 **Registry:** [MCP Registry](https://registry.modelcontextprotocol.io) · [Glama.ai](https://glama.ai) · [mcp.so](https://mcp.so)
 
 ---
@@ -79,7 +77,7 @@ curl -X POST https://mcp.aidatanorge.no/mcp \
 
 # 3. Send initialized notification
 curl -X POST https://mcp.aidatanorge.no/mcp \
-  -H "Content-Type": application/json" \
+  -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
@@ -161,12 +159,9 @@ search_filings(
 
 get_company_info(org_number)
 # Norwegian company lookup via Brønnøysundregistrene
-
-get_market_data(ticker)
-# Live price and key ratios via Yahoo Finance
 ```
 
-**Search quality:** Two-stage retrieval — dense vector search (`all-mpnet-base-v2`) followed by cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) for high-precision results.
+**Search quality:** Two-stage hybrid retrieval — dense vector search (`intfloat/e5-large-v2`, 1024d) combined with sparse BM25 search, fused via Reciprocal Rank Fusion (RRF), followed by cross-encoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`) for high-precision results.
 
 ---
 
@@ -174,16 +169,14 @@ get_market_data(ticker)
 
 | Source | Geography | Content | Volume |
 |--------|-----------|---------|--------|
-| NewsWeb | Norway | Exchange filings 2020– | ~30,000+ docs |
-| MFN Nordics | SE / DK / FI | Annual & quarterly reports, 162 companies | ~90,000+ docs |
-| GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly | ~8,600 docs |
-| SEC EDGAR | Nordic ADRs | 20-F / 6-K filings | Ongoing |
-| IR websites | SE/DK/FI | Annual/quarterly PDFs | ~3,000 docs |
-| Macro NO | Norway | GDP, CPI, rates, housing | 24 quarters |
+| XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–2024 | growing |
+| MFN Nordics | SE/DK/FI | Annual & quarterly reports, First North companies | ~90,000+ docs |
+| GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly Mon–Fri | growing |
+| SEC EDGAR | Nordic ADRs | 20-F / 6-K filings | ongoing |
+| Macro Norway | Norway | GDP, CPI, rates, housing, salmon, power | 24 quarters |
 | Macro Nordics | SE/DK/FI | Rates, housing, credit, power | 72 quarters |
-| Commodity | Global/Nordic | Brent, salmon, and more | Per quarter |
 
-**Total: 173,000+ vectors** · Updated nightly
+**Total: 300,000+ vectors** · Updated nightly
 
 ---
 
@@ -192,15 +185,15 @@ get_market_data(ticker)
 ```
 Data Sources                 Pipeline                  Serving
 ─────────────────            ─────────────────         ─────────────────
-Oslo Børs (NewsWeb)    →                               
-SEC EDGAR (20-F/6-K)   →     Python ingest scripts  →  Qdrant
-MFN Nordics (SE/DK/FI) →     + Playwright scraping  →  Vector Database
-GlobeNewswire          →     + PDF extraction        →  (173,000+ vectors)
-SSB / Norges Bank      →     + Chunking              →        ↓
-SCB / DST / stat.fi    →     + Embeddings            →  MCP Server
-ENTSO-E (power prices) →      (all-mpnet-base-v2)   →  (FastMCP 3.2)
-IR websites (PDF)      →                                      ↓
-                                                       AI Agents / LLMs
+XBRL ESEF               →                               
+SEC EDGAR (20-F/6-K)    →    Python ingest scripts  →  Qdrant
+MFN Nordics (SE/DK/FI)  →    + Playwright scraping  →  Vector Database
+GlobeNewswire           →    + PDF extraction        →  (300,000+ vectors)
+SSB / Norges Bank       →    + Chunking              →        ↓
+SCB / DST / stat.fi     →    + Dense embeddings      →  MCP Server
+                        →      (e5-large-v2, 1024d)  →  (FastMCP 3.2)
+                        →    + Sparse BM25            →        ↓
+                        →    + RRF fusion             →  AI Agents / LLMs
 ```
 
 ---
@@ -211,12 +204,13 @@ IR websites (PDF)      →                                      ↓
 - Python with Playwright for JavaScript-rendered IR pages and MFN feed
 - PyMuPDF (fitz) for PDF text extraction
 - Paragraph-aware chunking (512-token chunks, 100-token overlap)
-- Batch embedding with `sentence-transformers/all-mpnet-base-v2`
+- Dense embeddings: `intfloat/e5-large-v2` (1024d)
+- Sparse embeddings: `Qdrant/bm25` via fastembed
 
 **Storage & search**
 - Qdrant vector database (self-hosted)
-- Cosine similarity search
-- Cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`)
+- Hybrid dense+sparse retrieval with Reciprocal Rank Fusion (RRF)
+- Cross-encoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`)
 
 **Serving**
 - FastMCP 3.2 over HTTP (`/mcp` endpoint)
@@ -225,7 +219,7 @@ IR websites (PDF)      →                                      ↓
 
 **Infrastructure**
 - Ubuntu Server 24 LTS, self-hosted
-- 14 GB RAM, ~950 GB storage (LVM)
+- 16 GB RAM
 - Automated cron jobs for continuous ingestion
 - Bitcoin full node (LND) for Lightning Network payments
 - DigiByte full node with DigiRail and DigiDollar Oracle node
@@ -234,15 +228,18 @@ IR websites (PDF)      →                                      ↓
 
 ## Agent Payment Infrastructure
 
-The system is built with autonomous agent monetization in mind:
+The system is built with autonomous agent monetization in mind, supporting three complementary payment protocols:
 
-**Lightning Network (L402)**
-Running a full Bitcoin node with LND enables L402 — the HTTP payment protocol for autonomous agents. Agents can discover the API, receive a Lightning invoice, pay in millisatoshis, and get access — all without human intervention.
+**x402 Micropayments**  
+A pay-per-call variant of the server (`mcp_server_x402.py`) is implemented using the [x402 protocol](https://x402.org) — the HTTP 402 payment standard for autonomous agents. Agents receive a payment requirement response, pay in USDC on Base, and retry automatically. Currently running on Base Sepolia testnet. No node required — settles via Coinbase's public facilitator.
 
-**DigiRail / DigiDollar**
+**Lightning Network (L402)**  
+Running a full Bitcoin node with LND enables L402 — the HTTP payment protocol for autonomous agents. Agents can discover the API, receive a Lightning invoice, pay in millisatoshis, and get access — all without human intervention. Infrastructure in place, monetization layer in development.
+
+**DigiRail / DigiDollar**  
 Also running a DigiByte full node with DigiRail (an agent payment protocol similar to L402) and a DigiDollar Oracle node. DigiDollar is the world's first UTXO-native decentralized stablecoin, implemented directly in DigiByte Core v9.26. The oracle node contributes to the decentralized price feed that maintains DigiDollar's USD peg — 15 of 30 randomly selected oracle nodes must reach consensus every ~25 minutes using Schnorr signatures.
 
-This dual payment infrastructure (Bitcoin/Lightning + DigiByte/DigiRail) positions AIDataNorge to serve agents operating across different payment ecosystems.
+This multi-protocol payment infrastructure (x402/Base + Bitcoin/Lightning + DigiByte/DigiRail) positions AIDataNorge to serve agents operating across different payment ecosystems.
 
 ---
 
@@ -262,10 +259,10 @@ Chunking strategy: paragraphs are accumulated until reaching the 512-token model
 
 | Time | Job |
 |------|-----|
-| 07:00 daily | NewsWeb update (Oslo Børs) |
+| 08:00 daily | Query analysis report (email) |
 | 08:00–18:00 hourly (Mon–Fri) | GlobeNewswire (NO/SE/DK/FI) |
 | Quarterly | Macro Norway (SSB + Norges Bank) |
-| Quarterly (pending) | Macro Nordics (SCB/DST/stat.fi + ENTSO-E) |
+| Quarterly | Macro Nordics (SCB/DST/stat.fi) |
 
 ---
 
@@ -274,13 +271,10 @@ Chunking strategy: paragraphs are accumulated until reaching the 512-token model
 ### Check server health
 
 ```bash
-# Qdrant running?
-docker ps | grep qdrant
-
 # Qdrant responding?
 curl http://localhost:6333
 
-# Vector count (main collection)
+# Vector count
 curl http://localhost:6333/collections/nordic_company_data | python3 -m json.tool
 ```
 
@@ -296,36 +290,27 @@ ps aux | grep mcp_server.py
 # Tail live log
 tail -f ~/logs/mcp_server.log
 
-# Run full query analysis (per day, per hour, top queries, latency)
+# Run full query analysis
 cd ~/norsk-mcp-server && venv/bin/python3 analyze_queries.py
 ```
-
-`analyze_queries.py` parses `~/logs/mcp_server.log` and reports:
-- Total `search_filings` calls
-- Traffic per day and per hour (UTC)
-- Most common search queries
-- Breakdown by country and report type
-- Search latency (avg / min / max)
-- Zero-result queries
 
 ### Check Cloudflare tunnel
 
 ```bash
-# Tunnel status and connections
 journalctl -u cloudflared --since "1 hour ago" | tail -50
 ```
-
-For HTTP request analytics (geographic distribution, status codes, request volume), log in to [dash.cloudflare.com](https://dash.cloudflare.com) → select domain → **Analytics & Logs → Traffic**.
 
 ---
 
 ## Skills Demonstrated
 
 - **RAG system design** — end-to-end pipeline from raw data to semantic search
+- **Hybrid retrieval** — dense+sparse embeddings with RRF fusion and cross-encoder reranking
 - **Web scraping at scale** — Playwright, RSS feeds, REST APIs, PDF extraction
 - **Vector database operations** — Qdrant, embedding models, reranking
 - **MCP server development** — FastMCP, tool design for LLM agents
-- **Linux server administration** — LVM, process management, cron, nohup
+- **Agent payment protocols** — x402, L402, DigiRail
+- **Linux server administration** — process management, cron, systemd
 - **Blockchain infrastructure** — Bitcoin full node + LND, DigiByte full node + oracle
 - **Python engineering** — async pipelines, error handling, idempotent design
 - **Financial data domain knowledge** — Nordic exchanges, regulatory filings, macro data
@@ -334,16 +319,11 @@ For HTTP request analytics (geographic distribution, status codes, request volum
 
 ## Status (April 2026)
 
-- NewsWeb backfill complete: 500,000 → 669,999
-- MFN Nordics: 162 Large/Mid Cap companies (SE/DK/FI)
-- Macro Norway complete: 2020Q1–2025Q4
-- Macro Nordics complete: SE/DK/FI 2020Q1–2025Q4
+- `nordic_company_data`: 300,000+ vectors, re-ingested with enriched payload and upgraded to hybrid dense+sparse (e5-large-v2 + BM25)
+- `pl_documents`: 1,500,000 vectors — public domain American literature (Archive.org, pre-1929)
+- `alexandria`: 1,200,000+ vectors and growing — public domain philosophy/ethics/logic (Archive.org, pre-1928), ingest running
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
 - Published: MCP Registry · Glama.ai · mcp.so
-- GitHub topics: `mcp` `mcp-server` `nordic` `finance` `semantic-search` `qdrant` `norway` `sweden` `denmark` `finland`
+- x402 pay-per-call: implemented, running on Base Sepolia testnet
 - L402 / DigiRail: infrastructure in place, monetization layer in development
 - Live demo: `https://mcp.aidatanorge.no/demo`
-
----
-
-*Built and operated by a single developer as a passion project exploring the intersection of Nordic financial data, AI agents, and decentralized payment infrastructure.*
