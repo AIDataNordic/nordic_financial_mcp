@@ -6,7 +6,9 @@
 
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
-A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 300,000+ vectors across exchange filings, company reports, macro data, and commodity prices.
+A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 375,000+ vectors across exchange filings, company reports, macro data, and press releases.
+
+**Search:** Natural language queries over annual reports, quarterly reports, exchange announcements and macroeconomic summaries — filtered by company, ticker, country, sector or year. Two-stage hybrid retrieval (dense + sparse BM25, fused via RRF) with cross-encoder reranking for high-precision results.
 
 **Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
 **Transport:** `streamable-http`  
@@ -166,6 +168,8 @@ search_filings(
 # company, ticker, country, fiscal_year, report_type, filing_date and full text.
 ```
 
+**Search pipeline:** Dense embedding (`intfloat/e5-large-v2`, 1024d) + sparse BM25, fused via Reciprocal Rank Fusion (RRF), reranked by `mmarco-mMiniLMv2-L12-H384-v1`. Natural language queries in any language are supported.
+
 ### `get_company_info`
 
 Look up a company in the official business registry.
@@ -196,8 +200,6 @@ parse_pdf_to_text(
 ping(name="world")
 # Returns: "Hello world! Nordic MCP server is running."
 ```
-
-**Search quality:** Two-stage hybrid retrieval — dense vector search (`intfloat/e5-large-v2`, 1024d) combined with sparse BM25 search, fused via Reciprocal Rank Fusion (RRF), followed by cross-encoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`) for high-precision results.
 
 ---
 
