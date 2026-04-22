@@ -52,10 +52,7 @@ _fh = logging.FileHandler(os.path.expanduser("~/logs/mcp_server.log"))
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
 _log.addHandler(_fh)
 
-mcp = FastMCP(
-    "nordic-public-data-mcp",
-    homepage="https://mcp.aidatanorge.no",
-)
+mcp = FastMCP("nordic-public-data-mcp")
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
