@@ -1,9 +1,5 @@
 # Nordic Financial MCP
 
-> [!WARNING]
-> **Scheduled maintenance — ongoing (April 2026)**
-> The `nordic_company_data` collection is currently being re-ingested with an enriched payload schema and upgraded embedding model (`intfloat/e5-large-v2`, 1024d) with hybrid dense+sparse search. Search results may be incomplete until ingestion is finished.
-
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
 A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 375,000+ vectors across exchange filings, company reports, macro data, and press releases.
