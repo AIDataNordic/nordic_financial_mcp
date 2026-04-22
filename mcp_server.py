@@ -11,6 +11,7 @@ import json
 import torch
 import httpx
 from datetime import datetime
+from typing import Annotated
 from fastmcp import FastMCP
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -56,14 +57,17 @@ mcp = FastMCP("nordic-public-data-mcp")
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-async def ping(name: str = "world") -> str:
+async def ping(name: Annotated[str, "Name to include in the greeting"] = "world") -> str:
     """Simple connectivity test. Returns a greeting to confirm the server is running."""
     _log.info(f'ping name="{name}"')
     return f"Hello {name}! Nordic MCP server is running."
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-async def get_company_info(identifier: str, country: str = "NO") -> dict:
+async def get_company_info(
+    identifier: Annotated[str, "Organisation number (NO: 9 digits, DK: 8 digits CVR, FI: business ID with hyphen)"],
+    country: Annotated[str, "Two-letter country code: NO (default), DK, or FI"] = "NO",
+) -> dict:
     """Look up a company in the official business registry for Norway, Denmark or Finland.
 
     Args:
@@ -133,13 +137,13 @@ async def get_company_info(identifier: str, country: str = "NO") -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
 async def search_filings(
-    query: str,
-    ticker: str = "",
-    fiscal_year: int = 0,
-    report_type: str = "",
-    sector: str = "",
-    country: str = "",
-    limit: int = 5,
+    query: Annotated[str, "Natural language search query, e.g. 'Equinor dividend 2024' or 'Norwegian housing market Q3'"],
+    ticker: Annotated[str, "Filter by company ticker, e.g. 'EQNR', 'SALM', 'NDA'"] = "",
+    fiscal_year: Annotated[int, "Filter by fiscal year, e.g. 2024. Use 0 for no filter"] = 0,
+    report_type: Annotated[str, "Filter by type: annual_report, quarterly_report, press_release, exchange_announcement, macro_summary"] = "",
+    sector: Annotated[str, "Filter by sector, e.g. 'energy', 'financials', 'salmon'"] = "",
+    country: Annotated[str, "Filter by country: NO, SE, DK, or FI"] = "",
+    limit: Annotated[int, "Number of results to return (1–20)"] = 5,
 ) -> list[dict]:
     """Search the Nordic financial database for company filings, press releases
     and macroeconomic summaries.
@@ -306,7 +310,7 @@ async def search_filings(
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-async def parse_pdf_to_text(pdf_url: str) -> str:
+async def parse_pdf_to_text(pdf_url: Annotated[str, "Direct HTTPS URL to the PDF file"]) -> str:
     """Download a PDF from a URL and extract all text as a single string, page by page.
     
     This is useful for agents that need to read report attachments, press releases,
@@ -390,8 +394,8 @@ _NO_ZONES = {"NO1", "NO2", "NO3", "NO4", "NO5"}
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 async def get_current_power_price(
-    zone: str = "NO1",
-    include_tomorrow: bool = False,
+    zone: Annotated[str, "Bidding zone: NO1–NO5, SE1–SE4, DK1, DK2, or FI"] = "NO1",
+    include_tomorrow: Annotated[bool, "Also fetch tomorrow's prices if available (published after 13:00 CET)"] = False,
 ) -> dict:
     """Fetch today's hourly electricity spot prices for a Nordic bidding zone.
 
