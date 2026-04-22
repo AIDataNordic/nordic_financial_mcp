@@ -10,7 +10,7 @@ A production-grade semantic search server for Nordic financial markets — built
 
 **Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
 **Transport:** `streamable-http`  
-**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [Glama.ai](https://glama.ai) · [mcp.so](https://mcp.so)
+**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [mcp.so](https://mcp.so)
 
 ---
 
