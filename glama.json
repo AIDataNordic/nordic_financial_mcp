@@ -1,10 +1,10 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "name": "Nordic Financial MCP",
-  "description": "Semantic search across 173,000+ Nordic financial documents — company filings, macro data, press releases from Norway, Sweden, Denmark, and Finland",
+  "description": "Semantic search across 375,000+ Nordic financial documents — company filings, macro data, press releases and real-time electricity prices from Norway, Sweden, Denmark and Finland.",
   "maintainers": ["AIDataNordic"],
-  "categories": ["finance", "data-enrichment"],
-  "tags": ["nordic", "semantic-search", "financial-data", "norway", "sweden", "denmark", "finland", "rag", "qdrant"],
+  "categories": ["finance", "data-enrichment", "energy"],
+  "tags": ["nordic", "semantic-search", "financial-data", "norway", "sweden", "denmark", "finland", "electricity", "power-prices", "rag", "qdrant"],
   "examples": [
     {
       "title": "Search Equinor filings",
@@ -15,6 +15,11 @@
       "title": "Norwegian macro data",
       "description": "Get housing market trends",
       "command": "search_filings query=\"Norwegian house prices Q3 2024\" country=NO report_type=macro_summary"
+    },
+    {
+      "title": "Real-time electricity price",
+      "description": "Get current spot price for Oslo/East Norway",
+      "command": "get_current_power_price zone=NO1"
     },
     {
       "title": "Swedish press releases",
