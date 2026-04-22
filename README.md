@@ -2,13 +2,15 @@
 
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
+[![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp)
+
 A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 375,000+ vectors across exchange filings, company reports, macro data, and press releases.
 
 **Search:** Natural language queries over annual reports, quarterly reports, exchange announcements and macroeconomic summaries — filtered by company, ticker, country, sector or year. Two-stage hybrid retrieval (dense + sparse BM25, fused via RRF) with cross-encoder reranking for high-precision results.
 
 **Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
 **Transport:** `streamable-http`  
-**Registry:** [MCP Registry](https://registry.modelcontextprotocol.io) · [Glama.ai](https://glama.ai) · [mcp.so](https://mcp.so)
+**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io) · [Glama.ai](https://glama.ai) · [mcp.so](https://mcp.so)
 
 ---
 
