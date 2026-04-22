@@ -148,17 +148,53 @@ The system is designed with autonomous machine-to-machine consumption in mind, i
 
 ## MCP Tools
 
+### `search_filings`
+
+Semantic search over Nordic company filings, press releases and macroeconomic summaries.
+
 ```python
 search_filings(
     query="Nordea net interest margin outlook 2025",
-    report_type="quarterly_report",  # or annual_report, macro_summary, press_release
-    country="SE",                    # NO, SE, DK, FI
-    limit=10
+    report_type="quarterly_report",  # annual_report | quarterly_report | press_release | macro_summary
+    country="SE",                    # NO | SE | DK | FI
+    ticker="NDA",                    # optional — filter by company ticker
+    fiscal_year=2025,                # optional — filter by year
+    sector="energy",                 # optional — seafood | energy | shipping
+    limit=10                         # default 5, max 20
 )
-# Returns semantically ranked chunks with reranking, company metadata, and source URL
+# Returns semantically ranked text chunks with rerank_score, hybrid_score, vector_score,
+# company, ticker, country, fiscal_year, report_type, filing_date and full text.
+```
 
-get_company_info(org_number)
-# Norwegian company lookup via Brønnøysundregistrene
+### `get_company_info`
+
+Look up a company in the official business registry.
+
+```python
+get_company_info(
+    identifier="923609016",  # org/CVR/business ID
+    country="NO"             # NO (Brønnøysund) | DK (CVR) | FI (PRH)
+)
+# Returns company name, status and registered address.
+```
+
+### `parse_pdf_to_text`
+
+Download a PDF from a URL and extract all text, page by page.
+
+```python
+parse_pdf_to_text(
+    pdf_url="https://example.com/annual_report_2024.pdf"
+)
+# Returns extracted text with page separators.
+# Useful for reading report attachments not indexed in the main database.
+```
+
+### `ping`
+
+```python
+ping(name="world")
+# Returns: "Hello world! Nordic MCP server is running."
 ```
 
 **Search quality:** Two-stage hybrid retrieval — dense vector search (`intfloat/e5-large-v2`, 1024d) combined with sparse BM25 search, fused via Reciprocal Rank Fusion (RRF), followed by cross-encoder reranking (`mmarco-mMiniLMv2-L12-H384-v1`) for high-precision results.
@@ -169,14 +205,16 @@ get_company_info(org_number)
 
 | Source | Geography | Content | Volume |
 |--------|-----------|---------|--------|
-| XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–2024 | growing |
-| MFN Nordics | SE/DK/FI | Annual & quarterly reports, First North companies | ~90,000+ docs |
-| GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly Mon–Fri | growing |
-| SEC EDGAR | Nordic ADRs | 20-F / 6-K filings | ongoing |
+| XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–present | ~100k vectors |
+| MFN Nordics | SE/NO/DK/FI | Annual & quarterly reports, First North companies | ~116k vectors |
+| Oslo Børs Newsweb | NO | Exchange announcements, 2020–present | ~83k vectors |
+| Nasdaq Copenhagen | DK | Exchange announcements, 2020–present | growing |
+| Cision | SE/NO/DK/FI | Press releases | ~20k vectors |
+| GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly Mon–Fri | ~500 vectors |
 | Macro Norway | Norway | GDP, CPI, rates, housing, salmon, power | 24 quarters |
 | Macro Nordics | SE/DK/FI | Rates, housing, credit, power | 72 quarters |
 
-**Total: 300,000+ vectors** · Updated nightly
+**Total: 375,000+ vectors** · Updated nightly
 
 ---
 
@@ -185,12 +223,14 @@ get_company_info(org_number)
 ```
 Data Sources                 Pipeline                  Serving
 ─────────────────            ─────────────────         ─────────────────
-XBRL ESEF               →                               
-SEC EDGAR (20-F/6-K)    →    Python ingest scripts  →  Qdrant
-MFN Nordics (SE/DK/FI)  →    + Playwright scraping  →  Vector Database
-GlobeNewswire           →    + PDF extraction        →  (300,000+ vectors)
+XBRL ESEF               →    Python ingest scripts  →  Qdrant
+MFN Nordics             →    + Playwright scraping  →  Vector Database
+Oslo Børs Newsweb       →    + PDF extraction        →  (375,000+ vectors)
+Nasdaq Copenhagen       →    + Chunking              →        ↓
+Cision / GlobeNewswire  →
 SSB / Norges Bank       →    + Chunking              →        ↓
-SCB / DST / stat.fi     →    + Dense embeddings      →  MCP Server
+SSB / Norges Bank       →    + Dense embeddings      →  MCP Server
+SCB / DST / stat.fi     →
                         →      (e5-large-v2, 1024d)  →  (FastMCP 3.2)
                         →    + Sparse BM25            →        ↓
                         →    + RRF fusion             →  AI Agents / LLMs
