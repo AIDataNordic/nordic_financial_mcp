@@ -194,6 +194,20 @@ parse_pdf_to_text(
 # Useful for reading report attachments not indexed in the main database.
 ```
 
+### `get_current_power_price`
+
+Real-time day-ahead electricity spot prices for all Nordic bidding zones.
+
+```python
+get_current_power_price(
+    zone="NO1",              # NO1–NO5, SE1–SE4, DK1, DK2, FI
+    include_tomorrow=False   # fetch tomorrow's prices if available (published ~13:00 CET)
+)
+# Returns EUR/kWh — current hour price + full hourly breakdown + daily min/max/avg.
+# Norwegian zones sourced from hvakosterstrommen.no, others directly from ENTSO-E.
+# Handles both PT60M (hourly) and PT15M (15-min) resolutions.
+```
+
 ### `ping`
 
 ```python
@@ -273,7 +287,7 @@ SCB / DST / stat.fi     →
 The system is built with autonomous agent monetization in mind, supporting three complementary payment protocols:
 
 **x402 Micropayments**  
-A pay-per-call variant of the server (`mcp_server_x402.py`) is implemented using the [x402 protocol](https://x402.org) — the HTTP 402 payment standard for autonomous agents. Agents receive a payment requirement response, pay in USDC on Base, and retry automatically. Currently running on Base Sepolia testnet. No node required — settles via Coinbase's public facilitator.
+A pay-per-call variant of the server (`mcp_server_x402.py`) is implemented using the [x402 protocol](https://x402.org) — the HTTP 402 payment standard for autonomous agents. Agents receive a payment requirement response, pay in USDC on Base, and retry automatically. Currently **paused** — x402 functionality will be integrated directly into the main server (`mcp_server.py`) in a future release.
 
 **Lightning Network (L402)**  
 Running a full Bitcoin node with LND enables L402 — the HTTP payment protocol for autonomous agents. Agents can discover the API, receive a Lightning invoice, pay in millisatoshis, and get access — all without human intervention. Infrastructure in place, monetization layer in development.
@@ -367,6 +381,6 @@ journalctl -u cloudflared --since "1 hour ago" | tail -50
 - `nordic_company_data`: 375,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, macro
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
 - Published: MCP Registry · Glama.ai · mcp.so
-- x402 pay-per-call: implemented, running on Base Sepolia testnet
+- x402 pay-per-call: implemented, currently paused — will be integrated into main server
 - L402 / DigiRail: infrastructure in place, monetization layer in development
 - Live demo: `https://mcp.aidatanorge.no/demo`
