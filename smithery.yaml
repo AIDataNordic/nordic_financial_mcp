@@ -1,5 +1,6 @@
 startCommand:
   type: http
+  url: https://mcp.aidatanorge.no/mcp
   configSchema:
     type: object
     properties: {}
