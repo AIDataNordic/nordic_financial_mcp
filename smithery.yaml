@@ -16,6 +16,8 @@ configSchema:
   required: []
   additionalProperties: false
 
+homepage: https://aidatanorge.no
+
 startCommand:
   type: http
   url: https://mcp.aidatanorge.no/mcp
