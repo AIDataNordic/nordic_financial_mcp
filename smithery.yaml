@@ -3,5 +3,16 @@ startCommand:
   url: https://mcp.aidatanorge.no/mcp
   configSchema:
     type: object
-    properties: {}
+    properties:
+      default_country:
+        type: string
+        description: Default country filter for searches (NO, SE, DK, FI)
+        default: ""
+        enum: ["", "NO", "SE", "DK", "FI"]
+      default_limit:
+        type: integer
+        description: Default number of results to return
+        default: 5
+        minimum: 1
+        maximum: 20
     required: []
