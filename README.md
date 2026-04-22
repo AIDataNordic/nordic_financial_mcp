@@ -299,10 +299,13 @@ Chunking strategy: paragraphs are accumulated until reaching the 512-token model
 
 | Time | Job |
 |------|-----|
-| 08:00 daily | Query analysis report (email) |
-| 08:00–18:00 hourly (Mon–Fri) | GlobeNewswire (NO/SE/DK/FI) |
-| Quarterly | Macro Norway (SSB + Norges Bank) |
-| Quarterly | Macro Nordics (SCB/DST/stat.fi) |
+| 03:17 Sundays | XBRL annual reports |
+| 06:00 Mon–Fri | yfinance — stock prices and FX rates |
+| 06:15 daily | MFN Nordics — quarterly reports and press releases |
+| 06:30 Mon–Fri | ENTSO-E — energy data |
+| 07:00 daily | Oslo Børs Newsweb — exchange announcements |
+| 08:00–18:00 hourly Mon–Fri | GlobeNewswire — press releases (NO/SE/DK/FI) |
+| 09:00 daily | Query analysis report (email) |
 
 ---
 
@@ -359,9 +362,7 @@ journalctl -u cloudflared --since "1 hour ago" | tail -50
 
 ## Status (April 2026)
 
-- `nordic_company_data`: 300,000+ vectors, re-ingested with enriched payload and upgraded to hybrid dense+sparse (e5-large-v2 + BM25)
-- `pl_documents`: 1,500,000 vectors — public domain American literature (Archive.org, pre-1929)
-- `alexandria`: 1,200,000+ vectors and growing — public domain philosophy/ethics/logic (Archive.org, pre-1928), ingest running
+- `nordic_company_data`: 375,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, macro
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
 - Published: MCP Registry · Glama.ai · mcp.so
 - x402 pay-per-call: implemented, running on Base Sepolia testnet
