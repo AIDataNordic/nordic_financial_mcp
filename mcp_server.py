@@ -695,7 +695,10 @@ async def demo_endpoint(request):
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("MCP_PORT", 8003))
-    print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp")
-    print(f"→ Demo available at http://0.0.0.0:{port}/demo")
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+    if os.getenv("MCP_TRANSPORT") == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        port = int(os.getenv("MCP_PORT", 8003))
+        print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp")
+        print(f"→ Demo available at http://0.0.0.0:{port}/demo")
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)

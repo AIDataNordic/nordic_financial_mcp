@@ -2,15 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    fastmcp==3.2.0 \
-    qdrant-client==1.17.1 \
-    fastembed==0.7.4 \
-    sentence-transformers==5.3.0 \
-    python-dotenv==1.2.2 \
-    httpx==0.28.1 \
-    aiohttp==3.13.5 \
-    pymupdf==1.24.0
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download models during build to avoid timeout at startup
 RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/e5-large-v2')"
