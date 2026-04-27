@@ -750,6 +750,9 @@ async def demo_endpoint(request):
 
 
 if __name__ == "__main__":
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
     stdin_mode = os.fstat(sys.stdin.fileno()).st_mode
     use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or stat.S_ISFIFO(stdin_mode)
     if use_stdio:
@@ -758,4 +761,10 @@ if __name__ == "__main__":
         port = int(os.getenv("MCP_PORT", 8003))
         print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp", file=sys.stderr)
         print(f"→ Demo available at http://0.0.0.0:{port}/demo", file=sys.stderr)
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+        mcp.run(
+            transport="streamable-http",
+            host="0.0.0.0",
+            port=port,
+            stateless_http=True,
+            middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])],
+        )
