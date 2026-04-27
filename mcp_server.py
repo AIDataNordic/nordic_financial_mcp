@@ -5,6 +5,8 @@ summaries, with hybrid dense+sparse retrieval and cross-encoder reranking.
 """
 
 import os
+import sys
+import stat
 import logging
 import time
 import json
@@ -30,18 +32,18 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-print("Loading embedding model...")
+print("Loading embedding model...", file=sys.stderr)
 _model = SentenceTransformer("intfloat/e5-large-v2", device="cpu")
 _model.max_seq_length = 512
-print("Embedding model loaded.")
+print("Embedding model loaded.", file=sys.stderr)
 
-print("Loading sparse model...")
+print("Loading sparse model...", file=sys.stderr)
 _sparse_model = SparseTextEmbedding("Qdrant/bm25")
-print("Sparse model loaded.")
+print("Sparse model loaded.", file=sys.stderr)
 
-print("Loading reranker...")
+print("Loading reranker...", file=sys.stderr)
 _reranker = CrossEncoder(RERANK_MODEL, device="cpu")
-print("Reranker loaded.")
+print("Reranker loaded.", file=sys.stderr)
 
 _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
@@ -739,13 +741,12 @@ async def demo_endpoint(request):
 
 
 if __name__ == "__main__":
-    import sys, stat
     stdin_mode = os.fstat(sys.stdin.fileno()).st_mode
     use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or stat.S_ISFIFO(stdin_mode)
     if use_stdio:
         mcp.run(transport="stdio")
     else:
         port = int(os.getenv("MCP_PORT", 8003))
-        print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp")
-        print(f"→ Demo available at http://0.0.0.0:{port}/demo")
+        print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp", file=sys.stderr)
+        print(f"→ Demo available at http://0.0.0.0:{port}/demo", file=sys.stderr)
         mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
