@@ -739,8 +739,9 @@ async def demo_endpoint(request):
 
 
 if __name__ == "__main__":
-    import sys
-    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or not sys.stdin.isatty()
+    import sys, stat
+    stdin_mode = os.fstat(sys.stdin.fileno()).st_mode
+    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or stat.S_ISFIFO(stdin_mode)
     if use_stdio:
         mcp.run(transport="stdio")
     else:
