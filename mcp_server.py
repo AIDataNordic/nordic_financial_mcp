@@ -32,20 +32,23 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-print("Loading embedding model...", file=sys.stderr)
-_model = SentenceTransformer("intfloat/e5-large-v2", device="cpu")
-_model.max_seq_length = 512
-print("Embedding model loaded.", file=sys.stderr)
-
-print("Loading sparse model...", file=sys.stderr)
-_sparse_model = SparseTextEmbedding("Qdrant/bm25")
-print("Sparse model loaded.", file=sys.stderr)
-
-print("Loading reranker...", file=sys.stderr)
-_reranker = CrossEncoder(RERANK_MODEL, device="cpu")
-print("Reranker loaded.", file=sys.stderr)
-
 _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+try:
+    _qdrant.get_collections()
+    print("Qdrant reachable, loading models...", file=sys.stderr)
+    _model = SentenceTransformer("intfloat/e5-large-v2", device="cpu")
+    _model.max_seq_length = 512
+    print("Embedding model loaded.", file=sys.stderr)
+    _sparse_model = SparseTextEmbedding("Qdrant/bm25")
+    print("Sparse model loaded.", file=sys.stderr)
+    _reranker = CrossEncoder(RERANK_MODEL, device="cpu")
+    print("All models loaded.", file=sys.stderr)
+except Exception as _e:
+    print(f"Qdrant not reachable ({_e}), skipping model loading.", file=sys.stderr)
+    _model = None
+    _sparse_model = None
+    _reranker = None
 
 # --- Logging ---
 _log = logging.getLogger("mcp")
@@ -225,6 +228,9 @@ async def search_filings(
         full text chunk. Returns an empty list if no relevant results are found
         or if the Qdrant database is temporarily unreachable.
     """
+    if _model is None:
+        return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment. Use the live server at https://mcp.aidatanorge.no/mcp"}]
+
     limit = min(limit, 20)
     _t0 = time.time()
 
