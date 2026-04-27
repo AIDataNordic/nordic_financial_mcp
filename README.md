@@ -4,13 +4,13 @@
 
 [![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp)
 
-A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 375,000+ vectors across exchange filings, company reports, macro data, and press releases.
+A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 570,000+ vectors across exchange filings, company reports, commodity prices, freight rates, energy data and press releases.
 
 **Search:** Natural language queries over annual reports, quarterly reports, exchange announcements and macroeconomic summaries — filtered by company, ticker, country, sector or year. Two-stage hybrid retrieval (dense + sparse BM25, fused via RRF) with cross-encoder reranking for high-precision results.
 
 **Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
 **Transport:** `streamable-http`  
-**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [mcp.so](https://mcp.so)
+**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [Glama](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp) · [mcp.so](https://mcp.so)
 
 ---
 
@@ -219,16 +219,18 @@ ping(name="world")
 
 | Source | Geography | Content | Volume |
 |--------|-----------|---------|--------|
-| XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–present | ~100k vectors |
+| XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–present | ~89k vectors |
 | MFN Nordics | SE/NO/DK/FI | Annual & quarterly reports, First North companies | ~116k vectors |
-| Oslo Børs Newsweb | NO | Exchange announcements, 2020–present | ~83k vectors |
+| Oslo Børs Newsweb | NO | Exchange announcements, 2020–present | ~52k vectors |
 | Nasdaq Copenhagen | DK | Exchange announcements, 2020–present | growing |
 | Cision | SE/NO/DK/FI | Press releases | ~20k vectors |
 | GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly Mon–Fri | ~500 vectors |
+| ENTSO-E | NO/SE/DK/FI | Day-ahead electricity prices, all bidding zones | ~24k vectors |
+| Commodity & freight | Global | Oil, gas, metals, shipping rates (BDRY/FRO/ZIM proxies) | 25 quarters |
 | Macro Norway | Norway | GDP, CPI, rates, housing, salmon, power | 24 quarters |
 | Macro Nordics | SE/DK/FI | Rates, housing, credit, power | 72 quarters |
 
-**Total: 375,000+ vectors** · Updated nightly
+**Total: 570,000+ vectors** · Updated nightly
 
 ---
 
@@ -239,7 +241,7 @@ Data Sources                 Pipeline                  Serving
 ─────────────────            ─────────────────         ─────────────────
 XBRL ESEF               →    Python ingest scripts  →  Qdrant
 MFN Nordics             →    + Playwright scraping  →  Vector Database
-Oslo Børs Newsweb       →    + PDF extraction        →  (375,000+ vectors)
+Oslo Børs Newsweb       →    + PDF extraction        →  (570,000+ vectors)
 Nasdaq Copenhagen       →    + Chunking              →        ↓
 Cision / GlobeNewswire  →
 SSB / Norges Bank       →    + Chunking              →        ↓
@@ -376,9 +378,9 @@ journalctl -u cloudflared --since "1 hour ago" | tail -50
 
 ## Status (April 2026)
 
-- `nordic_company_data`: 375,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, macro
+- `nordic_company_data`: 570,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, ENTSO-E, commodity/freight, macro
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
-- Published: MCP Registry · Glama.ai · mcp.so
+- Published: Smithery · MCP Registry · Glama · mcp.so
 - x402 pay-per-call: implemented, currently paused — will be integrated into main server
 - L402 / DigiRail: infrastructure in place, monetization layer in development
 - Live demo: `https://mcp.aidatanorge.no/demo`
