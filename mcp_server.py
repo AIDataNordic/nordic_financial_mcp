@@ -766,5 +766,6 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=port,
             stateless_http=True,
+            json_response=True,
             middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])],
         )
