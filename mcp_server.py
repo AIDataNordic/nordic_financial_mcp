@@ -50,10 +50,13 @@ _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 # --- Logging ---
 _log = logging.getLogger("mcp")
 _log.setLevel(logging.INFO)
-os.makedirs(os.path.expanduser("~/logs"), exist_ok=True)
-_fh = logging.FileHandler(os.path.expanduser("~/logs/mcp_server.log"))
-_fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
-_log.addHandler(_fh)
+try:
+    os.makedirs(os.path.expanduser("~/logs"), exist_ok=True)
+    _fh = logging.FileHandler(os.path.expanduser("~/logs/mcp_server.log"))
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
+    _log.addHandler(_fh)
+except OSError:
+    logging.basicConfig(level=logging.INFO)
 
 mcp = FastMCP("nordic-public-data-mcp")
 
