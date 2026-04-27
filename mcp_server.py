@@ -6,7 +6,6 @@ summaries, with hybrid dense+sparse retrieval and cross-encoder reranking.
 
 import os
 import sys
-import stat
 import logging
 import time
 import json
@@ -753,8 +752,7 @@ if __name__ == "__main__":
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
 
-    stdin_mode = os.fstat(sys.stdin.fileno()).st_mode
-    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or stat.S_ISFIFO(stdin_mode)
+    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio"
     if use_stdio:
         mcp.run(transport="stdio")
     else:
