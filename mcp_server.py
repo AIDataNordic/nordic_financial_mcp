@@ -274,6 +274,8 @@ async def search_filings(
         )
     except Exception as e:
         _log.exception(f"Qdrant query failed: {e}")
+        if "Connection refused" in str(e) or "connect" in str(e).lower():
+            return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment. Use the live server at https://mcp.aidatanorge.no/mcp"}]
         return []
 
     if not results.points:
@@ -737,7 +739,9 @@ async def demo_endpoint(request):
 
 
 if __name__ == "__main__":
-    if os.getenv("MCP_TRANSPORT") == "stdio":
+    import sys
+    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio" or not sys.stdin.isatty()
+    if use_stdio:
         mcp.run(transport="stdio")
     else:
         port = int(os.getenv("MCP_PORT", 8003))
