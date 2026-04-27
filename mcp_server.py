@@ -57,8 +57,17 @@ mcp = FastMCP("nordic-public-data-mcp")
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-async def ping(name: Annotated[str, "Name to include in the greeting"] = "world") -> str:
-    """Simple connectivity test. Returns a greeting to confirm the server is running."""
+async def ping(name: Annotated[str, "Arbitrary label included in the response, e.g. 'healthcheck' or 'agent-1'"] = "world") -> str:
+    """Connectivity check that confirms the Nordic MCP server process is responding.
+
+    Use this at the start of a session to verify the server is reachable before
+    making other calls. Do not use as a proxy for database health — the server can
+    respond while the Qdrant vector database is temporarily unavailable. To confirm
+    data availability, call search_filings directly.
+
+    Returns:
+        A greeting string: "Hello {name}! Nordic MCP server is running."
+    """
     _log.info(f'ping name="{name}"')
     return f"Hello {name}! Nordic MCP server is running."
 
@@ -70,6 +79,11 @@ async def get_company_info(
 ) -> dict:
     """Look up a company in the official business registry for Norway, Denmark or Finland.
 
+    Use this to retrieve authoritative registration data (legal name, status, address)
+    for a known organisation number. Do not use for Sweden (SE) — use search_filings
+    with country='SE' instead, as Bolagsverket integration is not yet available.
+    Do not use to discover tickers or ISIN codes — use search_filings for that.
+
     Args:
         identifier: Organisation/business/CVR number. Format varies by country:
                     NO: 9-digit organisation number, e.g. 923609016 (Equinor)
@@ -79,6 +93,8 @@ async def get_company_info(
 
     Returns:
         Dict with company name, status and registered business address.
+        Returns {'error': '<message>'} if the company is not found, the identifier
+        format is invalid, or the upstream registry API is unavailable.
     """
     async with httpx.AsyncClient() as client:
         try:
@@ -148,7 +164,12 @@ async def search_filings(
     """Search the Nordic financial database for company filings, press releases
     and macroeconomic summaries.
 
-    The database contains ~375 000 vectors across four Nordic markets (NO/SE/DK/FI).
+    Use this as the primary tool for any question about Nordic listed companies,
+    markets or macro conditions. Do not use to retrieve a full document — results
+    are chunked text excerpts; use parse_pdf_to_text for the full original document.
+    Do not use for Swedish company registration data — use get_company_info instead.
+
+    The database contains ~570 000 vectors across four Nordic markets (NO/SE/DK/FI).
 
     COMPANY FILINGS
       Annual reports (XBRL/ESEF) and quarterly reports from ~1 500 listed companies
@@ -196,7 +217,8 @@ async def search_filings(
         List of relevant text excerpts with metadata, reranked by relevance.
         Each result includes rerank_score, hybrid_score, vector_score, company,
         ticker, country, fiscal_year, report_type, period, filing_date and the
-        full text chunk.
+        full text chunk. Returns an empty list if no relevant results are found
+        or if the Qdrant database is temporarily unreachable.
     """
     limit = min(limit, 20)
     _t0 = time.time()
@@ -311,16 +333,24 @@ async def search_filings(
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
 async def parse_pdf_to_text(pdf_url: Annotated[str, "Direct HTTPS URL to the PDF file"]) -> str:
-    """Download a PDF from a URL and extract all text as a single string, page by page.
-    
-    This is useful for agents that need to read report attachments, press releases,
-    or any PDF content that is not directly searchable in the main database.
-    
+    """Download a PDF from a URL and extract all text content, page by page.
+
+    Use this to read the full text of a specific document — for example, an annual
+    report PDF linked from a search_filings result. Best combined with search_filings:
+    use search_filings to locate the document, then parse_pdf_to_text for the full text.
+    Do not use for PDFs that are already well-represented in the database — search_filings
+    is faster and returns pre-ranked, relevant excerpts.
+    Not suitable for scanned (image-only) PDFs without embedded text; those pages
+    will be returned as "(no extractable text)".
+
     Args:
-        pdf_url: Direct URL to the PDF file (e.g. https://example.com/report.pdf)
-    
+        pdf_url: Direct HTTPS URL to the PDF file, e.g. https://example.com/report.pdf.
+                 Must be publicly accessible; authentication-protected URLs will fail.
+
     Returns:
-        All text from the PDF with page separators, or an error message.
+        All text from the PDF with "--- Page N ---" separators between pages.
+        Returns an error string if the download fails, the URL does not point to a
+        valid PDF, or the document exceeds the 60-second download timeout.
     """
     import aiohttp
     import fitz  # PyMuPDF
@@ -397,18 +427,30 @@ async def get_current_power_price(
     zone: Annotated[str, "Bidding zone: NO1–NO5, SE1–SE4, DK1, DK2, or FI"] = "NO1",
     include_tomorrow: Annotated[bool, "Also fetch tomorrow's prices if available (published after 13:00 CET)"] = False,
 ) -> dict:
-    """Fetch today's hourly electricity spot prices for a Nordic bidding zone.
+    """Fetch today's hourly day-ahead electricity spot prices for a Nordic bidding zone.
 
-    All zones return prices in EUR/kWh (NordPool native currency).
-    Tomorrow's prices are typically available after 13:00 CET.
+    Use this for current and near-term (today/tomorrow) price queries. Do not use
+    for historical price analysis — use search_filings with report_type='macro_summary'
+    and a date reference in the query for that purpose.
+    Tomorrow's prices are published by NordPool around 13:00 CET; requests before
+    that time will return "not yet available" for the tomorrow field.
+
+    All zones return prices in EUR/kWh (NordPool day-ahead, native currency).
+    Norwegian zones (NO1–NO5) use hvakosterstrommen.no; all other zones use ENTSO-E.
 
     Args:
-        zone:             Bidding zone: NO1 (East), NO2 (Southwest), NO3 (Central),
-                          NO4 (North), NO5 (West), SE1–SE4, DK1, DK2, FI.
-        include_tomorrow: Also fetch tomorrow's prices if available (default False).
+        zone:             Bidding zone code. Options:
+                          NO1 (East/Oslo), NO2 (Southwest), NO3 (Central/Trondheim),
+                          NO4 (North), NO5 (West/Bergen),
+                          SE1–SE4, DK1, DK2, FI.
+        include_tomorrow: Set to True to also fetch tomorrow's hourly prices if
+                          already published (default False).
 
     Returns:
-        Dict with current hour price, today's hourly prices, and summary stats.
+        Dict containing zone, date, current_hour_utc, current price, and a 'today'
+        summary with min/max/avg and the full hourly list. Includes a 'tomorrow'
+        key if include_tomorrow=True. Returns {'error': '<message>'} if price data
+        is unavailable for the requested zone or date.
     """
     import xml.etree.ElementTree as ET
     from datetime import date, datetime, timedelta, timezone

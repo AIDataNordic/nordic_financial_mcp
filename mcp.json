@@ -1,7 +1,7 @@
 {
   "name": "io.github.AIDataNordic/nordic-financial-mcp",
   "version": "1.1.0",
-  "description": "Semantic search across 375,000+ Nordic financial documents — company filings, press releases, macro data and real-time electricity prices for Norway, Sweden, Denmark and Finland.",
+  "description": "Semantic search across 570,000+ Nordic financial documents — company filings, press releases, macro data and real-time electricity prices for Norway, Sweden, Denmark and Finland.",
   "vendor": {
     "name": "AIDataNorge",
     "url": "https://github.com/AIDataNordic"
@@ -13,23 +13,23 @@
   "tools": [
     {
       "name": "search_filings",
-      "description": "Semantic search over Nordic company filings, press releases and macroeconomic summaries. Supports filtering by ticker, country, report type and fiscal year."
+      "description": "Primary search tool for Nordic financial data. Semantic search over 570,000+ vectors from company filings (annual/quarterly), press releases, exchange announcements and macro summaries for NO, SE, DK and FI. Supports filtering by ticker, country, report_type and fiscal_year. Returns reranked text excerpts with metadata. Use for any question about Nordic companies or macro conditions. Do not use to retrieve full documents — use parse_pdf_to_text for that."
     },
     {
       "name": "get_company_info",
-      "description": "Look up a company in the official business registry for Norway (Brønnøysund), Denmark (CVR) or Finland (PRH)."
+      "description": "Look up a company in the official business registry for Norway (Brønnøysund), Denmark (CVR) or Finland (PRH). Returns legal name, status and address. Use for known organisation numbers. Not available for Sweden (SE) — use search_filings instead. Returns an error dict if the company is not found or the registry is unavailable."
     },
     {
       "name": "get_current_power_price",
-      "description": "Real-time day-ahead electricity spot prices in EUR/kWh for all Nordic bidding zones (NO1–NO5, SE1–SE4, DK1, DK2, FI)."
+      "description": "Fetch today's hourly day-ahead electricity spot prices in EUR/kWh for any Nordic bidding zone (NO1–NO5, SE1–SE4, DK1, DK2, FI). Returns current-hour price, full hourly schedule and daily stats. Tomorrow's prices are available after ~13:00 CET. For historical price context, use search_filings with report_type='macro_summary'."
     },
     {
       "name": "parse_pdf_to_text",
-      "description": "Download a PDF from a URL and extract all text page by page. Useful for reading annual report attachments not indexed in the main database."
+      "description": "Download a publicly accessible PDF and extract all text page by page. Use to read the full content of a specific document (e.g. an annual report PDF linked from a search_filings result). Not suitable for scanned image PDFs. Do not use for documents already well-indexed in the database — search_filings is faster for those."
     },
     {
       "name": "ping",
-      "description": "Simple connectivity test. Returns a greeting to confirm the server is running."
+      "description": "Connectivity check that confirms the server process is responding. Use to verify the server is reachable before starting a workflow. Does not confirm database availability — call search_filings directly to verify data access."
     }
   ],
   "categories": ["finance", "data", "search", "energy"],
