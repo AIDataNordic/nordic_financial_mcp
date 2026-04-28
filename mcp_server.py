@@ -176,7 +176,7 @@ async def search_filings(
     are chunked text excerpts; use parse_pdf_to_text for the full original document.
     Do not use for Swedish company registration data — use get_company_info instead.
 
-    The database contains ~570 000 vectors across four Nordic markets (NO/SE/DK/FI).
+    The database contains ~1 million vectors across four Nordic markets (NO/SE/DK/FI).
 
     COMPANY FILINGS
       Annual reports (XBRL/ESEF) and quarterly reports from ~1 500 listed companies
@@ -748,6 +748,26 @@ async def demo_endpoint(request):
     return HTMLResponse(content=DEMO_HTML)
 
 
+class AcceptPatchMiddleware:
+    """Ensure Accept header includes both content types required by streamable-http."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = list(scope["headers"])
+            accept_idx = next((i for i, (k, _) in enumerate(headers) if k == b"accept"), None)
+            current = headers[accept_idx][1].decode() if accept_idx is not None else ""
+            if "text/event-stream" not in current:
+                new_accept = (current + ", application/json, text/event-stream").lstrip(", ")
+                if accept_idx is not None:
+                    headers[accept_idx] = (b"accept", new_accept.encode())
+                else:
+                    headers.append((b"accept", new_accept.encode()))
+                scope["headers"] = headers
+        await self.app(scope, receive, send)
+
+
 if __name__ == "__main__":
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
@@ -764,5 +784,8 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=port,
             stateless_http=True,
-            middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])],
+            middleware=[
+                Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
+                Middleware(AcceptPatchMiddleware),
+            ],
         )

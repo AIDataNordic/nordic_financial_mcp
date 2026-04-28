@@ -4,7 +4,7 @@
 
 [![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/score.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp)
 
-A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 570,000+ vectors across exchange filings, company reports, commodity prices, freight rates, energy data and press releases.
+A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 1,000,000+ vectors across exchange filings, company reports, commodity prices, freight rates, energy data and press releases.
 
 **Search:** Natural language queries over annual reports, quarterly reports, exchange announcements and macroeconomic summaries — filtered by company, ticker, country, sector or year. Two-stage hybrid retrieval (dense + sparse BM25, fused via RRF) with cross-encoder reranking for high-precision results.
 
@@ -230,7 +230,7 @@ ping(name="world")
 | Macro Norway | Norway | GDP, CPI, rates, housing, salmon, power | 24 quarters |
 | Macro Nordics | SE/DK/FI | Rates, housing, credit, power | 72 quarters |
 
-**Total: 570,000+ vectors** · Updated nightly
+**Total: 1,000,000+ vectors** · Updated nightly
 
 ---
 
@@ -241,7 +241,7 @@ Data Sources                 Pipeline                  Serving
 ─────────────────            ─────────────────         ─────────────────
 XBRL ESEF               →    Python ingest scripts  →  Qdrant
 MFN Nordics             →    + Playwright scraping  →  Vector Database
-Oslo Børs Newsweb       →    + PDF extraction        →  (570,000+ vectors)
+Oslo Børs Newsweb       →    + PDF extraction        →  (1,000,000+ vectors)
 Nasdaq Copenhagen       →    + Chunking              →        ↓
 Cision / GlobeNewswire  →
 SSB / Norges Bank       →    + Chunking              →        ↓
@@ -378,7 +378,7 @@ journalctl -u cloudflared --since "1 hour ago" | tail -50
 
 ## Status (April 2026)
 
-- `nordic_company_data`: 570,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, ENTSO-E, commodity/freight, macro
+- `nordic_company_data`: 1,000,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, ENTSO-E, commodity/freight, macro
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
 - Published: Smithery · MCP Registry · Glama · mcp.so
 - x402 pay-per-call: implemented, currently paused — will be integrated into main server
