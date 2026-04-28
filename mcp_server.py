@@ -31,7 +31,7 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=3)
 
 try:
     _qdrant.get_collections()
