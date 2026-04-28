@@ -63,7 +63,7 @@ except OSError:
 mcp = FastMCP(
     "nordic-public-data-mcp",
     description=(
-        "Semantic search across 1,000,000+ Nordic financial documents for AI agents. "
+        "Semantic search across 1,000,000+ Nordic financial vectors for AI agents. "
         "Covers company filings (annual and quarterly reports), exchange announcements, "
         "and press releases from Norway, Sweden, Denmark and Finland — plus macroeconomic "
         "data including interest rates, GDP, CPI, housing prices, credit growth, commodity "
