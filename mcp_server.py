@@ -60,7 +60,18 @@ try:
 except OSError:
     logging.basicConfig(level=logging.INFO)
 
-mcp = FastMCP("nordic-public-data-mcp")
+mcp = FastMCP(
+    "nordic-public-data-mcp",
+    description=(
+        "Semantic search across 1,000,000+ Nordic financial documents for AI agents. "
+        "Covers company filings (annual and quarterly reports), exchange announcements, "
+        "and press releases from Norway, Sweden, Denmark and Finland — plus macroeconomic "
+        "data including interest rates, GDP, CPI, housing prices, credit growth, commodity "
+        "prices (shipping, salmon, oil), energy prices (ENTSO-E day-ahead spot prices for "
+        "all Nordic bidding zones), and FX rates. "
+        "Hybrid dense+sparse retrieval with cross-encoder reranking. Updated nightly."
+    ),
+)
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
