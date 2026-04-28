@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
-[![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/card.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/score.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp)
+[![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/score.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp)
 
 A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 570,000+ vectors across exchange filings, company reports, commodity prices, freight rates, energy data and press releases.
 
