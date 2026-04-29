@@ -20,12 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install fastmcp==3.2.0 fastapi==0.135.2 qdrant-client==1.17.1 \
-            fastembed==0.7.4 sentence-transformers==5.3.0 python-dotenv==1.2.2 \
-            httpx==0.28.1 aiohttp==3.13.5
+          pip install -r requirements.txt
 
       - name: Syntax check
-        run: |
-          python -m py_compile mcp_server.py
-          python -m py_compile recipe_mcp_server.py
-          python -m py_compile alexandria_mcp_server.py
+        run: python -m py_compile mcp_server.py
