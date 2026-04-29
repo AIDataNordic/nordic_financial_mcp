@@ -19,7 +19,7 @@ We are committed to making participation in this project a harassment-free exper
 
 ## Enforcement
 
-Instances of unacceptable behaviour may be reported to **hallvardo@gmail.com**. All complaints will be reviewed promptly and confidentially.
+Instances of unacceptable behaviour may be reported to **kontakt@aidatanorge.no**. All complaints will be reviewed promptly and confidentially.
 
 ## Attribution
 

@@ -10,7 +10,7 @@
 
 Please **do not** report security vulnerabilities via public GitHub issues.
 
-Email: **hallvardo@gmail.com**
+Email: **kontakt@aidatanorge.no**
 
 Include:
 - A description of the vulnerability
