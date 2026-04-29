@@ -1,3 +1,7 @@
+name: Nordic Financial MCP
+description: Semantic search over Nordic financial data — filings, press releases, macro summaries, and real-time power prices for Norway, Sweden, Denmark, Finland, and Iceland.
+homepage: https://aidatanorge.no
+
 configSchema:
   type: object
   description: Optional configuration for the Nordic Financial MCP server
@@ -15,8 +19,6 @@ configSchema:
       maximum: 20
   required: []
   additionalProperties: false
-
-homepage: https://aidatanorge.no
 
 startCommand:
   type: http
