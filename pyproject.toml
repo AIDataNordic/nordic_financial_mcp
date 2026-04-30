@@ -1,0 +1,5 @@
+[project]
+name = "nordic-financial-mcp"
+version = "1.0.1"
+description = "Semantic search over Nordic financial data via MCP"
+requires-python = ">=3.10"
