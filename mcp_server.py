@@ -6,6 +6,7 @@ summaries, with hybrid dense+sparse retrieval and cross-encoder reranking.
 
 import os
 import sys
+import asyncio
 import logging
 import time
 import json
@@ -31,7 +32,7 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=3)
+_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=15)
 
 try:
     _qdrant.get_collections()
@@ -61,6 +62,173 @@ except OSError:
     logging.basicConfig(level=logging.INFO)
 
 mcp = FastMCP("nordic-public-data-mcp")
+
+
+# --- Sync helpers (shared by async tools and x402 handlers) ---
+
+def _search_filings_sync(
+    query: str,
+    ticker: str = "",
+    fiscal_year: int = 0,
+    report_type: str = "",
+    sector: str = "",
+    country: str = "",
+    limit: int = 5,
+) -> list[dict]:
+    if _model is None:
+        return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment."}]
+    limit = min(limit, 20)
+    t0 = time.time()
+    e5_query = f"query: {query}"
+    with torch.no_grad():
+        dense_vec = _model.encode(e5_query, normalize_embeddings=True).tolist()
+    sparse_result = list(_sparse_model.embed([query]))[0]
+    sparse_vec = SparseVector(indices=sparse_result.indices.tolist(), values=sparse_result.values.tolist())
+    conditions = []
+    if ticker:
+        conditions.append(FieldCondition(key="ticker",      match=MatchValue(value=ticker.upper())))
+    if fiscal_year:
+        conditions.append(FieldCondition(key="fiscal_year", match=MatchValue(value=fiscal_year)))
+    if report_type:
+        conditions.append(FieldCondition(key="report_type", match=MatchValue(value=report_type)))
+    if sector:
+        conditions.append(FieldCondition(key="sector",      match=MatchValue(value=sector.lower())))
+    if country:
+        conditions.append(FieldCondition(key="country",     match=MatchValue(value=country.upper())))
+    query_filter = Filter(must=conditions) if conditions else None
+    fetch_limit = max(RERANK_FETCH, limit * 4)
+    try:
+        results = _qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            prefetch=[
+                Prefetch(query=dense_vec,  using="dense",  limit=fetch_limit, filter=query_filter),
+                Prefetch(query=sparse_vec, using="sparse", limit=fetch_limit, filter=query_filter),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=fetch_limit,
+            with_payload=True,
+        )
+    except Exception as e:
+        _log.exception(f"Qdrant query failed: {e}")
+        return []
+    if not results.points:
+        return []
+    candidates = results.points
+    pairs = [(query, p.payload.get("text", "")) for p in candidates]
+    with torch.no_grad():
+        rerank_scores = _reranker.predict(pairs)
+    r_scores = [float(s) for s in rerank_scores]
+    v_scores = [p.score for p in candidates]
+    v_max = max(v_scores) or 1e-8
+    hybrid_scores = [r * (1.0 + 0.3 * (v / v_max)) for r, v in zip(r_scores, v_scores)]
+    ranked = sorted(zip(hybrid_scores, r_scores, candidates), key=lambda x: x[0], reverse=True)
+    output = []
+    for hybrid_score, rerank_score, point in ranked:
+        if len(output) >= limit:
+            break
+        if rerank_score > 7.0 and point.score < 0.05:
+            continue
+        p = point.payload
+        is_macro = p.get("report_type") == "macro"
+        output.append({
+            "rerank_score": round(float(rerank_score), 4),
+            "hybrid_score": round(float(hybrid_score), 4),
+            "vector_score": round(point.score, 4),
+            "company":      p.get("macro_label") if is_macro else p.get("company_name"),
+            "ticker":       p.get("macro_symbol") if is_macro else p.get("ticker"),
+            "sector":       p.get("macro_category") if is_macro else p.get("sector"),
+            "country":      p.get("country"),
+            "fiscal_year":  p.get("fiscal_year"),
+            "report_type":  p.get("report_type"),
+            "period":       p.get("period") or p.get("period_ending"),
+            "filing_date":  p.get("filing_date") or p.get("published_date"),
+            "text":         p.get("text"),
+            "chunk_index":  p.get("chunk_index"),
+            "total_chunks": p.get("total_chunks"),
+        })
+    elapsed = round(time.time() - t0, 3)
+    _log.info(f'search_filings query="{query}" ticker="{ticker}" report_type="{report_type}" country="{country}" results={len(output)} elapsed={elapsed}s')
+    return output
+
+
+def _parse_pdf_sync(pdf_url: str) -> str:
+    import fitz
+    _log.info(f'parse_pdf_to_text url="{pdf_url}"')
+    pdf_document = None
+    try:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
+            resp = client.get(pdf_url)
+            if resp.status_code != 200:
+                return f"Download failed: HTTP {resp.status_code}"
+            pdf_bytes = resp.content
+        if b"%PDF" not in pdf_bytes[:10]:
+            return "URL did not return a PDF (got HTML or other content)"
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        pages = []
+        for i, page in enumerate(pdf_document):
+            text = page.get_text()
+            pages.append(f"--- Page {i+1} ---\n{text}" if text.strip() else f"--- Page {i+1} (no extractable text) ---")
+        return "\n\n".join(pages) or "PDF contains no extractable text."
+    except Exception as e:
+        return f"PDF parsing error: {e}"
+    finally:
+        if pdf_document:
+            pdf_document.close()
+
+
+# --- Optional x402 micropayment layer (deaktivert inntil mainnet-lansering) ---
+# Aktiver ved å fjerne kommentarene nedenfor og legge til _meta-param + dispatch i toolsene.
+# Priser: search_filings $0.05, parse_pdf_to_text $0.02, get_current_power_price TBD.
+#
+# _EVM_ADDRESS = os.environ.get("EVM_ADDRESS")
+# if _EVM_ADDRESS:
+#     from x402.http import FacilitatorConfig, HTTPFacilitatorClientSync
+#     from x402.mechanisms.evm.exact import ExactEvmServerScheme
+#     from x402.mcp import MCPToolResult, SyncPaymentWrapperConfig, create_payment_wrapper_sync
+#     from x402.mcp.types import ResourceInfo
+#     from x402.schemas import ResourceConfig
+#     from x402.server import x402ResourceServerSync
+#
+#     _X402_NETWORK    = os.getenv("X402_NETWORK", "eip155:8453")   # Base mainnet
+#     _FACILITATOR_URL = os.getenv("FACILITATOR_URL", "https://x402.org/facilitator")
+#     _PRICE_SEARCH    = "$0.05"
+#     _PRICE_PDF       = "$0.02"
+#
+#     _facilitator     = HTTPFacilitatorClientSync(FacilitatorConfig(url=_FACILITATOR_URL))
+#     _resource_server = x402ResourceServerSync(_facilitator)
+#     _resource_server.register(_X402_NETWORK, ExactEvmServerScheme())
+#     _resource_server.initialize()
+#
+#     def _build_accepts(price: str) -> list:
+#         return _resource_server.build_payment_requirements(
+#             ResourceConfig(scheme="exact", network=_X402_NETWORK, pay_to=_EVM_ADDRESS,
+#                            price=price, extra={"name": "USDC", "version": "2"})
+#         )
+#
+#     _wrap_s = create_payment_wrapper_sync(
+#         _resource_server,
+#         SyncPaymentWrapperConfig(
+#             accepts=_build_accepts(_PRICE_SEARCH),
+#             resource=ResourceInfo(url="mcp://tool/search_filings", description="Semantic search over Nordic financial filings"),
+#         ),
+#     )
+#     _wrap_p = create_payment_wrapper_sync(
+#         _resource_server,
+#         SyncPaymentWrapperConfig(
+#             accepts=_build_accepts(_PRICE_PDF),
+#             resource=ResourceInfo(url="mcp://tool/parse_pdf_to_text", description="PDF download and text extraction"),
+#         ),
+#     )
+#
+#     @_wrap_s
+#     def _search_x402_handler(args: dict, ctx: dict) -> MCPToolResult:
+#         result = _search_filings_sync(**args)
+#         return MCPToolResult(content=[{"type": "text", "text": json.dumps(result, default=str)}])
+#
+#     @_wrap_p
+#     def _pdf_x402_handler(args: dict, ctx: dict) -> MCPToolResult:
+#         result = _parse_pdf_sync(args["pdf_url"])
+#         return MCPToolResult(content=[{"type": "text", "text": result}])
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -274,11 +442,10 @@ async def search_filings(
         results = _qdrant.query_points(
             collection_name=COLLECTION_NAME,
             prefetch=[
-                Prefetch(query=dense_vec,   using="dense",  limit=fetch_limit),
-                Prefetch(query=sparse_vec,  using="sparse", limit=fetch_limit),
+                Prefetch(query=dense_vec,   using="dense",  limit=fetch_limit, filter=query_filter),
+                Prefetch(query=sparse_vec,  using="sparse", limit=fetch_limit, filter=query_filter),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
-            query_filter=query_filter,
             limit=fetch_limit,
             with_payload=True,
         )
@@ -570,6 +737,74 @@ async def get_current_power_price(
 
     _log.info(f'get_current_power_price zone="{zone}" current={current["EUR_per_kWh"]} EUR/kWh')
     return result
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+async def due_diligence_report(
+    company: Annotated[str, "Company name to research, e.g. 'Equinor', 'Norsk Hydro', 'Aker BP'"],
+    sections: Annotated[list, "List of section dicts. Each must have 'name' (str) and 'query' (str). Optional: 'ticker' (str, filters results to that company), 'limit' (int, default 5, max 10). Maximum 8 sections."],
+) -> dict:
+    """Run multiple targeted searches and return results grouped by section for due diligence.
+
+    The agent defines all sections and queries — this tool does not decide what is
+    relevant. Before calling, reason about which topics and data sources matter for
+    this specific company: financial metrics, risk factors, sector-specific macro
+    drivers (e.g. freight rates for shipping, power prices for aluminium smelters),
+    recent press releases, peer context, etc. Formulate one query per section.
+
+    Each query is run independently as a full hybrid search (dense + sparse + rerank).
+
+    IMPORTANT — use 'ticker' on company-specific sections to avoid false positives.
+    Without a ticker filter, documents that merely mention the company (e.g. as a
+    customer or competitor) can rank above actual filings from that company. Omit
+    'ticker' only for sections where cross-company results are intentional, such as
+    sector macro context or peer comparisons.
+
+    Args:
+        company:  Company name, used for metadata only (not a filter).
+        sections: Up to 8 sections. Example:
+                  [
+                    {"name": "financials", "query": "Equinor revenue EBITDA operating profit 2024", "ticker": "EQNR"},
+                    {"name": "risk",       "query": "Equinor climate regulatory risk stranded assets", "ticker": "EQNR"},
+                    {"name": "macro",      "query": "Brent crude oil price energy sector Norway 2024", "limit": 3},
+                    {"name": "news",       "query": "Equinor press release dividend acquisition 2024", "ticker": "EQNR"}
+                  ]
+
+    Returns:
+        Dict with 'company', 'generated_at', and 'sections' — one entry per requested
+        section with its name and results (same format as search_filings).
+        Sections with no results return an empty list.
+    """
+    if _model is None:
+        return {"error": "database_unavailable", "message": "The vector database is not reachable in this environment."}
+    if not sections:
+        return {"error": "No sections provided."}
+
+    sections = sections[:8]
+    loop = asyncio.get_event_loop()
+
+    async def _fetch(sec):
+        name  = sec.get("name", "unnamed")
+        query = sec.get("query", "")
+        ticker = sec.get("ticker", "")
+        limit  = min(int(sec.get("limit", 5)), 10)
+        if not query:
+            return name, []
+        results = await loop.run_in_executor(
+            None,
+            lambda: _search_filings_sync(query=query, ticker=ticker, limit=limit),
+        )
+        return name, results
+
+    pairs = await asyncio.gather(*[_fetch(sec) for sec in sections])
+    output_sections = {name: results for name, results in pairs}
+
+    _log.info(f'due_diligence_report company="{company}" sections={list(output_sections.keys())}')
+    return {
+        "company": company,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "sections": output_sections,
+    }
 
 
 # --- DEMO ENDEPUNKT (nettleser-demo) ---
