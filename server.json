@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json",
+  "name": "io.github.AIDataNordic/nordic-financial-mcp",
+  "title": "Nordic Financial MCP",
+  "description": "Semantic search across 570,000+ Nordic financial documents — company filings, macro data, press releases and real-time electricity prices from Norway, Sweden, Denmark and Finland.",
+  "repository": {
+    "url": "https://github.com/AIDataNordic/nordic_financial_mcp",
+    "source": "github"
+  },
+  "version": "1.0.1",
+  "license": "MIT",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.aidatanorge.no/mcp"
+    }
+  ]
+}
