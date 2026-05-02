@@ -27,9 +27,5 @@
       "description": "Recent announcements from Swedish companies",
       "command": "search_filings query=\"strategic acquisition\" country=SE report_type=press_release limit=10"
     }
-  ],
-  "transport": {
-    "type": "streamable-http",
-    "url": "https://mcp.aidatanorge.no/mcp"
-  }
+  ]
 }
