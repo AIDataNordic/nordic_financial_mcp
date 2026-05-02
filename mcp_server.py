@@ -32,23 +32,30 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
-_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=15)
+_qdrant = None
+_model = None
+_sparse_model = None
+_reranker = None
+_models_loaded = False
 
-try:
-    _qdrant.get_collections()
-    print("Qdrant reachable, loading models...", file=sys.stderr)
-    _model = SentenceTransformer("intfloat/e5-large-v2", device="cpu")
-    _model.max_seq_length = 512
-    print("Embedding model loaded.", file=sys.stderr)
-    _sparse_model = SparseTextEmbedding("Qdrant/bm25")
-    print("Sparse model loaded.", file=sys.stderr)
-    _reranker = CrossEncoder(RERANK_MODEL, device="cpu")
-    print("All models loaded.", file=sys.stderr)
-except Exception as _e:
-    print(f"Qdrant not reachable ({_e}), skipping model loading.", file=sys.stderr)
-    _model = None
-    _sparse_model = None
-    _reranker = None
+def _ensure_models():
+    global _qdrant, _model, _sparse_model, _reranker, _models_loaded
+    if _models_loaded:
+        return
+    _models_loaded = True
+    try:
+        _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=15)
+        _qdrant.get_collections()
+        print("Qdrant reachable, loading models...", file=sys.stderr)
+        _model = SentenceTransformer("intfloat/e5-large-v2", device="cpu")
+        _model.max_seq_length = 512
+        print("Embedding model loaded.", file=sys.stderr)
+        _sparse_model = SparseTextEmbedding("Qdrant/bm25")
+        print("Sparse model loaded.", file=sys.stderr)
+        _reranker = CrossEncoder(RERANK_MODEL, device="cpu")
+        print("All models loaded.", file=sys.stderr)
+    except Exception as _e:
+        print(f"Qdrant not reachable ({_e}), skipping model loading.", file=sys.stderr)
 
 # --- Logging ---
 _log = logging.getLogger("mcp")
@@ -75,6 +82,7 @@ def _search_filings_sync(
     country: str = "",
     limit: int = 5,
 ) -> list[dict]:
+    _ensure_models()
     if _model is None:
         return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment."}]
     limit = min(limit, 20)
@@ -395,6 +403,7 @@ async def search_filings(
         full text chunk. Returns an empty list if no relevant results are found
         or if the Qdrant database is temporarily unreachable.
     """
+    _ensure_models()
     if _model is None:
         return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment. Use the live server at https://mcp.aidatanorge.no/mcp"}]
 
@@ -775,6 +784,7 @@ async def due_diligence_report(
         section with its name and results (same format as search_filings).
         Sections with no results return an empty list.
     """
+    _ensure_models()
     if _model is None:
         return {"error": "database_unavailable", "message": "The vector database is not reachable in this environment."}
     if not sections:
