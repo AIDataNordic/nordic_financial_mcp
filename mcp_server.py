@@ -10,18 +10,10 @@ import asyncio
 import logging
 import time
 import json
-import torch
 import httpx
 from datetime import datetime
 from typing import Annotated
 from fastmcp import FastMCP
-from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    Filter, FieldCondition, MatchValue,
-    Prefetch, FusionQuery, Fusion, SparseVector,
-)
-from sentence_transformers import SentenceTransformer, CrossEncoder
-from fastembed import SparseTextEmbedding
 from fastapi.responses import HTMLResponse
 from mcp.types import ToolAnnotations
 
@@ -38,12 +30,30 @@ _sparse_model = None
 _reranker = None
 _models_loaded = False
 
+# Populated lazily by _ensure_models() — avoids heavy imports at startup
+torch = None
+SparseVector = None
+Filter = FieldCondition = MatchValue = Prefetch = FusionQuery = Fusion = None
+
 def _ensure_models():
     global _qdrant, _model, _sparse_model, _reranker, _models_loaded
+    global torch, SparseVector, Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
     if _models_loaded:
         return
     _models_loaded = True
     try:
+        import torch as _torch
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import (
+            Filter as _Filter, FieldCondition as _FC, MatchValue as _MV,
+            Prefetch as _Prefetch, FusionQuery as _FQ, Fusion as _Fusion,
+            SparseVector as _SV,
+        )
+        from sentence_transformers import SentenceTransformer, CrossEncoder
+        from fastembed import SparseTextEmbedding
+        torch = _torch
+        Filter, FieldCondition, MatchValue = _Filter, _FC, _MV
+        Prefetch, FusionQuery, Fusion, SparseVector = _Prefetch, _FQ, _Fusion, _SV
         _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=15)
         _qdrant.get_collections()
         print("Qdrant reachable, loading models...", file=sys.stderr)
