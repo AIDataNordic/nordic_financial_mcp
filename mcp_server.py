@@ -9,7 +9,6 @@ import sys
 import asyncio
 import logging
 import time
-import json
 import httpx
 from datetime import datetime
 from typing import Annotated
@@ -30,30 +29,16 @@ _sparse_model = None
 _reranker = None
 _models_loaded = False
 
-# Populated lazily by _ensure_models() — avoids heavy imports at startup
-torch = None
-SparseVector = None
-Filter = FieldCondition = MatchValue = Prefetch = FusionQuery = Fusion = None
 
 def _ensure_models():
     global _qdrant, _model, _sparse_model, _reranker, _models_loaded
-    global torch, SparseVector, Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
     if _models_loaded:
         return
     _models_loaded = True
     try:
-        import torch as _torch
         from qdrant_client import QdrantClient
-        from qdrant_client.models import (
-            Filter as _Filter, FieldCondition as _FC, MatchValue as _MV,
-            Prefetch as _Prefetch, FusionQuery as _FQ, Fusion as _Fusion,
-            SparseVector as _SV,
-        )
         from sentence_transformers import SentenceTransformer, CrossEncoder
         from fastembed import SparseTextEmbedding
-        torch = _torch
-        Filter, FieldCondition, MatchValue = _Filter, _FC, _MV
-        Prefetch, FusionQuery, Fusion, SparseVector = _Prefetch, _FQ, _Fusion, _SV
         _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=15)
         _qdrant.get_collections()
         print("Qdrant reachable, loading models...", file=sys.stderr)
@@ -79,119 +64,6 @@ except OSError:
     logging.basicConfig(level=logging.INFO)
 
 mcp = FastMCP("nordic-public-data-mcp")
-
-
-# --- Sync helpers (shared by async tools and x402 handlers) ---
-
-def _search_filings_sync(
-    query: str,
-    ticker: str = "",
-    fiscal_year: int = 0,
-    report_type: str = "",
-    sector: str = "",
-    country: str = "",
-    limit: int = 5,
-) -> list[dict]:
-    _ensure_models()
-    if _model is None:
-        return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment."}]
-    limit = min(limit, 20)
-    t0 = time.time()
-    e5_query = f"query: {query}"
-    with torch.no_grad():
-        dense_vec = _model.encode(e5_query, normalize_embeddings=True).tolist()
-    sparse_result = list(_sparse_model.embed([query]))[0]
-    sparse_vec = SparseVector(indices=sparse_result.indices.tolist(), values=sparse_result.values.tolist())
-    conditions = []
-    if ticker:
-        conditions.append(FieldCondition(key="ticker",      match=MatchValue(value=ticker.upper())))
-    if fiscal_year:
-        conditions.append(FieldCondition(key="fiscal_year", match=MatchValue(value=fiscal_year)))
-    if report_type:
-        conditions.append(FieldCondition(key="report_type", match=MatchValue(value=report_type)))
-    if sector:
-        conditions.append(FieldCondition(key="sector",      match=MatchValue(value=sector.lower())))
-    if country:
-        conditions.append(FieldCondition(key="country",     match=MatchValue(value=country.upper())))
-    query_filter = Filter(must=conditions) if conditions else None
-    fetch_limit = max(RERANK_FETCH, limit * 4)
-    try:
-        results = _qdrant.query_points(
-            collection_name=COLLECTION_NAME,
-            prefetch=[
-                Prefetch(query=dense_vec,  using="dense",  limit=fetch_limit, filter=query_filter),
-                Prefetch(query=sparse_vec, using="sparse", limit=fetch_limit, filter=query_filter),
-            ],
-            query=FusionQuery(fusion=Fusion.RRF),
-            limit=fetch_limit,
-            with_payload=True,
-        )
-    except Exception as e:
-        _log.exception(f"Qdrant query failed: {e}")
-        return []
-    if not results.points:
-        return []
-    candidates = results.points
-    pairs = [(query, p.payload.get("text", "")) for p in candidates]
-    with torch.no_grad():
-        rerank_scores = _reranker.predict(pairs)
-    r_scores = [float(s) for s in rerank_scores]
-    v_scores = [p.score for p in candidates]
-    v_max = max(v_scores) or 1e-8
-    hybrid_scores = [r * (1.0 + 0.3 * (v / v_max)) for r, v in zip(r_scores, v_scores)]
-    ranked = sorted(zip(hybrid_scores, r_scores, candidates), key=lambda x: x[0], reverse=True)
-    output = []
-    for hybrid_score, rerank_score, point in ranked:
-        if len(output) >= limit:
-            break
-        if rerank_score > 7.0 and point.score < 0.05:
-            continue
-        p = point.payload
-        is_macro = p.get("report_type") == "macro"
-        output.append({
-            "rerank_score": round(float(rerank_score), 4),
-            "hybrid_score": round(float(hybrid_score), 4),
-            "vector_score": round(point.score, 4),
-            "company":      p.get("macro_label") if is_macro else p.get("company_name"),
-            "ticker":       p.get("macro_symbol") if is_macro else p.get("ticker"),
-            "sector":       p.get("macro_category") if is_macro else p.get("sector"),
-            "country":      p.get("country"),
-            "fiscal_year":  p.get("fiscal_year"),
-            "report_type":  p.get("report_type"),
-            "period":       p.get("period") or p.get("period_ending"),
-            "filing_date":  p.get("filing_date") or p.get("published_date"),
-            "text":         p.get("text"),
-            "chunk_index":  p.get("chunk_index"),
-            "total_chunks": p.get("total_chunks"),
-        })
-    elapsed = round(time.time() - t0, 3)
-    _log.info(f'search_filings query="{query}" ticker="{ticker}" report_type="{report_type}" country="{country}" results={len(output)} elapsed={elapsed}s')
-    return output
-
-
-def _parse_pdf_sync(pdf_url: str) -> str:
-    import fitz
-    _log.info(f'parse_pdf_to_text url="{pdf_url}"')
-    pdf_document = None
-    try:
-        with httpx.Client(timeout=60, follow_redirects=True) as client:
-            resp = client.get(pdf_url)
-            if resp.status_code != 200:
-                return f"Download failed: HTTP {resp.status_code}"
-            pdf_bytes = resp.content
-        if b"%PDF" not in pdf_bytes[:10]:
-            return "URL did not return a PDF (got HTML or other content)"
-        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-        pages = []
-        for i, page in enumerate(pdf_document):
-            text = page.get_text()
-            pages.append(f"--- Page {i+1} ---\n{text}" if text.strip() else f"--- Page {i+1} (no extractable text) ---")
-        return "\n\n".join(pages) or "PDF contains no extractable text."
-    except Exception as e:
-        return f"PDF parsing error: {e}"
-    finally:
-        if pdf_document:
-            pdf_document.close()
 
 
 # --- Optional x402 micropayment layer (deaktivert inntil mainnet-lansering) ---
@@ -417,10 +289,12 @@ async def search_filings(
     if _model is None:
         return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment. Use the live server at https://mcp.aidatanorge.no/mcp"}]
 
+    import torch
+    from qdrant_client.models import SparseVector, Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
+
     limit = min(limit, 20)
     _t0 = time.time()
 
-    # e5-large-v2 requires "query:"-prefix at search time
     e5_query = f"query: {query}"
 
     with torch.no_grad():
@@ -801,19 +675,15 @@ async def due_diligence_report(
         return {"error": "No sections provided."}
 
     sections = sections[:8]
-    loop = asyncio.get_event_loop()
 
     async def _fetch(sec):
-        name  = sec.get("name", "unnamed")
-        query = sec.get("query", "")
+        name   = sec.get("name", "unnamed")
+        query  = sec.get("query", "")
         ticker = sec.get("ticker", "")
         limit  = min(int(sec.get("limit", 5)), 10)
         if not query:
             return name, []
-        results = await loop.run_in_executor(
-            None,
-            lambda: _search_filings_sync(query=query, ticker=ticker, limit=limit),
-        )
+        results = await search_filings(query=query, ticker=ticker, limit=limit)
         return name, results
 
     pairs = await asyncio.gather(*[_fetch(sec) for sec in sections])
