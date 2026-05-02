@@ -206,6 +206,28 @@ get_current_power_price(
 # Handles both PT60M (hourly) and PT15M (15-min) resolutions.
 ```
 
+### `due_diligence_report`
+
+Run multiple targeted searches in a single call and get results grouped by section — designed for agent-driven due diligence workflows.
+
+```python
+due_diligence_report(
+    company="Equinor",
+    sections=[
+        {"name": "financials", "query": "Equinor revenue EBITDA operating profit 2024", "ticker": "EQNR"},
+        {"name": "risk",       "query": "Equinor climate regulatory risk stranded assets", "ticker": "EQNR"},
+        {"name": "macro",      "query": "Brent crude oil price energy sector Norway 2024", "limit": 3},
+        {"name": "news",       "query": "Equinor press release dividend acquisition 2024", "ticker": "EQNR"}
+    ]
+)
+# Returns: {company, generated_at, sections} — one entry per section with ranked text chunks.
+# All sections are searched in parallel. Up to 8 sections, max 10 results each.
+# Use ticker on company-specific sections to avoid false positives from documents
+# that merely mention the company as a customer or competitor.
+```
+
+The agent defines all sections and queries — the tool does not decide what is relevant. Reason about which topics matter for the specific company before calling: financial metrics, risk factors, sector-specific macro drivers, recent press releases, peer context.
+
 ### `ping`
 
 ```python
