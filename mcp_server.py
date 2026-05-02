@@ -1024,7 +1024,7 @@ class AcceptPatchMiddleware:
 
 
 if __name__ == "__main__":
-    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    transport = os.getenv("MCP_TRANSPORT", "http")
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
