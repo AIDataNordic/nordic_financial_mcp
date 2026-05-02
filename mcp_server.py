@@ -1024,13 +1024,12 @@ class AcceptPatchMiddleware:
 
 
 if __name__ == "__main__":
-    from starlette.middleware import Middleware
-    from starlette.middleware.cors import CORSMiddleware
-
-    use_stdio = os.getenv("MCP_TRANSPORT") == "stdio"
-    if use_stdio:
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    if transport == "stdio":
         mcp.run(transport="stdio")
     else:
+        from starlette.middleware import Middleware
+        from starlette.middleware.cors import CORSMiddleware
         port = int(os.getenv("MCP_PORT", 8003))
         print(f"→ Starting MCP server at http://0.0.0.0:{port}/mcp", file=sys.stderr)
         print(f"→ Demo available at http://0.0.0.0:{port}/demo", file=sys.stderr)
