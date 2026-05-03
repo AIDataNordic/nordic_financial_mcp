@@ -12,7 +12,10 @@ import time
 import httpx
 from datetime import datetime
 from typing import Annotated
+from dotenv import load_dotenv
 from fastmcp import FastMCP
+
+load_dotenv()
 from fastapi.responses import HTMLResponse
 from mcp.types import ToolAnnotations
 
