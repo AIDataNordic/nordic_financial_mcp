@@ -244,7 +244,9 @@ ping(name="world")
 | XBRL ESEF (filings.xbrl.org) | NO/SE/DK/FI/IS | Annual reports, regulated markets, 2020–present | ~89k vectors |
 | MFN Nordics | SE/NO/DK/FI | Annual & quarterly reports, First North companies | ~116k vectors |
 | Oslo Børs Newsweb | NO | Exchange announcements, 2020–present | ~52k vectors |
-| Nasdaq Copenhagen | DK | Exchange announcements, 2020–present | growing |
+| Nasdaq Copenhagen | DK | Exchange announcements, 2020–present | ~8k vectors |
+| Nasdaq Helsinki | FI | Exchange announcements, 2020–present | ~5k vectors |
+| Nasdaq Stockholm | SE | Exchange announcements, 2020–present | in progress |
 | Cision | SE/NO/DK/FI | Press releases | ~20k vectors |
 | GlobeNewswire | NO/SE/DK/FI | Press releases, updated hourly Mon–Fri | ~500 vectors |
 | ENTSO-E | NO/SE/DK/FI | Day-ahead electricity prices, all bidding zones | ~24k vectors |
@@ -398,7 +400,7 @@ journalctl -u cloudflared --since "1 hour ago" | tail -50
 
 ---
 
-## Status (April 2026)
+## Status (May 2026)
 
 - `nordic_company_data`: 1,000,000+ vectors — XBRL, MFN, Newsweb, Cision, GlobeNewswire, ENTSO-E, commodity/freight, macro
 - MCP server: live at `https://mcp.aidatanorge.no/mcp`
