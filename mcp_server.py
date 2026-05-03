@@ -817,10 +817,11 @@ async def analyze_company(
                     result = {"error": f"Unknown tool: {block.name}"}
             except Exception as e:
                 result = {"error": str(e)}
+            import json as _json
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
-                "content": str(result),
+                "content": _json.dumps(result, ensure_ascii=False),
             })
         messages.append({"role": "user", "content": tool_results})
 
