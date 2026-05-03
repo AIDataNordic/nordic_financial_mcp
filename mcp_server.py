@@ -700,6 +700,133 @@ async def due_diligence_report(
     }
 
 
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+async def analyze_company(
+    company: Annotated[str, "Company name or ticker, e.g. 'Equinor' or 'EQNR'"],
+    question: Annotated[str, "Question to answer, e.g. 'How did margins develop 2022-2024?' or 'What are the main risk factors?'"],
+    model: Annotated[str, "Model: 'haiku' (default, fast, ~$0.07/call) or 'sonnet' (more capable, ~$0.24/call)"] = "haiku",
+) -> str:
+    """AI-powered company analysis using semantic search over Nordic financial data.
+
+    Orchestrates multiple searches internally and returns a synthesized narrative
+    answer with source citations. Covers annual reports, quarterly reports, press
+    releases and macroeconomic context for Nordic listed companies.
+
+    Use this when you want a synthesized answer rather than raw search chunks.
+    For raw data access, use search_filings or due_diligence_report instead.
+
+    Args:
+        company: Company name or ticker
+        question: What you want to know about the company
+        model: 'haiku' (default) or 'sonnet'
+    """
+    import anthropic as _anthropic
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return "ANTHROPIC_API_KEY not configured on this server."
+
+    model_id = "claude-haiku-4-5-20251001" if model != "sonnet" else "claude-sonnet-4-6"
+
+    _tools = [
+        {
+            "name": "search_filings",
+            "description": "Search Nordic financial filings, press releases and macro data.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query":       {"type": "string"},
+                    "ticker":      {"type": "string"},
+                    "fiscal_year": {"type": "integer"},
+                    "report_type": {"type": "string", "description": "annual_report, quarterly_report, press_release, macro_summary"},
+                    "country":     {"type": "string", "description": "NO, SE, DK, FI"},
+                    "limit":       {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "get_current_power_price",
+            "description": "Real-time electricity spot prices for Nordic bidding zones.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "zone":             {"type": "string", "description": "NO1-NO5, SE1-SE4, DK1, DK2, FI"},
+                    "include_tomorrow": {"type": "boolean"},
+                },
+                "required": ["zone"],
+            },
+        },
+    ]
+
+    _system = (
+        "You are a financial analyst with access to 1M+ Nordic financial documents.\n\n"
+        "Search strategy:\n"
+        "- Search one company and one year at a time for precise results\n"
+        "- Always use 'ticker' when searching for a specific company\n"
+        "- For energy-intensive companies (aluminium, steel, salmon farming, data centres): "
+        "also call get_current_power_price for relevant zones\n"
+        "- Run 3-6 targeted searches before synthesising\n\n"
+        "Answer format:\n"
+        "- Write a coherent narrative in the same language as the question\n"
+        "- Cite sources inline: (Company, report type, year)\n"
+        "- If data is missing or uncertain, say so explicitly — never invent numbers"
+    )
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    messages = [{"role": "user", "content": f"Company: {company}\n\nQuestion: {question}"}]
+
+    for _ in range(10):
+        response = client.messages.create(
+            model=model_id,
+            max_tokens=2000,
+            system=_system,
+            tools=_tools,
+            messages=messages,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+
+        if response.stop_reason == "end_turn":
+            for block in response.content:
+                if hasattr(block, "text"):
+                    _log.info(f'analyze_company company="{company}" model={model_id}')
+                    return block.text
+            return "No answer generated."
+
+        tool_results = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            args = block.input
+            try:
+                if block.name == "search_filings":
+                    result = await search_filings(
+                        query=args.get("query", ""),
+                        ticker=args.get("ticker", ""),
+                        fiscal_year=int(args.get("fiscal_year", 0)),
+                        report_type=args.get("report_type", ""),
+                        country=args.get("country", ""),
+                        limit=min(int(args.get("limit", 5)), 10),
+                    )
+                elif block.name == "get_current_power_price":
+                    result = await get_current_power_price(
+                        zone=args.get("zone", "NO1"),
+                        include_tomorrow=bool(args.get("include_tomorrow", False)),
+                    )
+                else:
+                    result = {"error": f"Unknown tool: {block.name}"}
+            except Exception as e:
+                result = {"error": str(e)}
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": str(result),
+            })
+        messages.append({"role": "user", "content": tool_results})
+
+    return "Analysis incomplete: maximum tool calls reached."
+
+
 # --- DEMO ENDEPUNKT (nettleser-demo) ---
 DEMO_HTML = '''<!DOCTYPE html>
 <html>
