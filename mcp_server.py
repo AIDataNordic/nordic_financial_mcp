@@ -311,9 +311,10 @@ async def search_filings(
 
     conditions = []
     if ticker:
-        conditions.append(
-            FieldCondition(key="ticker", match=MatchValue(value=ticker.upper()))
-        )
+        conditions.append(Filter(should=[
+            FieldCondition(key="ticker",       match=MatchValue(value=ticker.upper())),
+            FieldCondition(key="macro_symbol", match=MatchValue(value=ticker.upper())),
+        ]))
     if fiscal_year:
         conditions.append(
             FieldCondition(key="fiscal_year", match=MatchValue(value=fiscal_year))
@@ -823,6 +824,8 @@ async def analyze_company(
                 "tool_use_id": block.id,
                 "content": _json.dumps(result, ensure_ascii=False),
             })
+        if not tool_results:
+            break
         messages.append({"role": "user", "content": tool_results})
 
     return "Analysis incomplete: maximum tool calls reached."
