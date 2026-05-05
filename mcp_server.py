@@ -300,10 +300,13 @@ async def search_filings(
 
     e5_query = f"query: {query}"
 
+    loop = asyncio.get_event_loop()
     with torch.no_grad():
-        dense_vec = _model.encode(e5_query, normalize_embeddings=True).tolist()
+        dense_vec = await loop.run_in_executor(
+            None, lambda: _model.encode(e5_query, normalize_embeddings=True).tolist()
+        )
 
-    sparse_result = list(_sparse_model.embed([query]))[0]
+    sparse_result = list(await loop.run_in_executor(None, lambda: list(_sparse_model.embed([query]))))[0]
     sparse_vec = SparseVector(
         indices=sparse_result.indices.tolist(),
         values=sparse_result.values.tolist(),
@@ -358,7 +361,9 @@ async def search_filings(
     candidates = results.points
     pairs = [(query, p.payload.get("text", "")) for p in candidates]
     with torch.no_grad():
-        rerank_scores = _reranker.predict(pairs)
+        rerank_scores = await loop.run_in_executor(
+            None, lambda: _reranker.predict(pairs)
+        )
 
     # Hybrid scoring: vector_score boosts rerank multiplicatively — can tip ties but can't rescue weak reranks
     r_scores = [float(s) for s in rerank_scores]
@@ -637,19 +642,23 @@ async def get_current_power_price(
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
-async def due_diligence_report(
+async def company_research(
     company: Annotated[str, "Company name to research, e.g. 'Equinor', 'Norsk Hydro', 'Aker BP'"],
     sections: Annotated[list, "List of section dicts. Each must have 'name' (str) and 'query' (str). Optional: 'ticker' (str, filters results to that company), 'limit' (int, default 5, max 10). Maximum 8 sections."],
 ) -> dict:
-    """Run multiple targeted searches and return results grouped by section for due diligence.
+    """Run multiple targeted searches and return raw results grouped by section.
 
-    The agent defines all sections and queries — this tool does not decide what is
+    The caller defines all sections and queries — this tool does not decide what is
     relevant. Before calling, reason about which topics and data sources matter for
     this specific company: financial metrics, risk factors, sector-specific macro
     drivers (e.g. freight rates for shipping, power prices for aluminium smelters),
     recent press releases, peer context, etc. Formulate one query per section.
 
     Each query is run independently as a full hybrid search (dense + sparse + rerank).
+    Results are raw chunks — the caller is responsible for synthesis.
+
+    For a fully orchestrated due diligence report (AI-planned sections, synthesized
+    narrative), use the Alfred MCP server instead: alfred.aidatanorge.no/mcp
 
     IMPORTANT — use 'ticker' on company-specific sections to avoid false positives.
     Without a ticker filter, documents that merely mention the company (e.g. as a
@@ -693,7 +702,7 @@ async def due_diligence_report(
     pairs = await asyncio.gather(*[_fetch(sec) for sec in sections])
     output_sections = {name: results for name, results in pairs}
 
-    _log.info(f'due_diligence_report company="{company}" sections={list(output_sections.keys())}')
+    _log.info(f'company_research company="{company}" sections={list(output_sections.keys())}')
     return {
         "company": company,
         "generated_at": datetime.utcnow().isoformat() + "Z",
@@ -714,7 +723,9 @@ async def analyze_company(
     releases and macroeconomic context for Nordic listed companies.
 
     Use this when you want a synthesized answer rather than raw search chunks.
-    For raw data access, use search_filings or due_diligence_report instead.
+    For raw data access, use search_filings or company_research instead.
+    For a full due diligence report with AI-planned sections, use the Alfred MCP
+    server: alfred.aidatanorge.no/mcp
 
     Args:
         company: Company name or ticker
