@@ -229,13 +229,21 @@ def _generate_power_sections(periods: list, power_zones: list) -> list[dict]:
 
 
 def _generate_xbrl_sections(company: str, ticker: str) -> list[dict]:
-    """Dedicated sections that fetch directly from xbrl_esef, bypassing newsweb competition."""
+    """Dedicated sections that fetch directly from XBRL sources, bypassing newsweb competition."""
     return [
         {
             "name":           "xbrl_financials",
             "query":          f"{company} revenue operating profit EBIT net income annual report",
             "report_type":    "annual_report",
             "source":         "xbrl_esef",
+            "limit":          5,
+            "company_filter": True,
+        },
+        {
+            "name":           "xbrl_summary",
+            "query":          f"{company} revenue assets equity annual financial summary",
+            "report_type":    "financial_summary",
+            "source":         "extracted_xbrl",
             "limit":          5,
             "company_filter": True,
         },
@@ -273,28 +281,85 @@ def _strip_json(text: str) -> str:
     return text.strip()
 
 
-async def _probe_ticker(upstream: "Client", company: str) -> str | None:
-    """Look up the actual ticker from Qdrant before planning."""
+async def _probe(upstream: "Client", company: str) -> dict:
+    """Probe Qdrant for ticker, metadata and business description before planning.
+
+    Returns a dict with:
+      ticker        — confirmed exchange ticker (XBRL-preferred)
+      fiscal_years  — sorted list of years found in database
+      report_types  — set of report_type values found
+      sources       — set of source values found
+      country       — most common country code
+      description   — 2-3 text snippets from early annual report chunks
+    """
+    result = await upstream.call_tool("search_filings", {"query": company, "limit": 10})
+    rows = _parse_tool_result(result)
+
+    xbrl_sources = {"xbrl_esef", "extracted_xbrl"}
+    xbrl_tickers = [r.get("ticker") for r in rows if r.get("ticker") and r.get("source") in xbrl_sources]
+    all_tickers  = [r.get("ticker") for r in rows if r.get("ticker")]
+    ticker = None
+    if xbrl_tickers:
+        ticker = max(set(xbrl_tickers), key=xbrl_tickers.count)
+    elif all_tickers:
+        ticker = max(set(all_tickers), key=all_tickers.count)
+
+    fiscal_years = sorted({int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")}, reverse=True)
+    report_types = {r["report_type"] for r in rows if r.get("report_type")}
+    sources      = {r["source"]      for r in rows if r.get("source")}
+    countries    = [r.get("country") for r in rows if r.get("country")]
+    country      = max(set(countries), key=countries.count) if countries else None
+
+    # Dedicated description probe: early chunks of annual reports
+    desc_snippets: list[str] = []
     try:
-        result = await upstream.call_tool("search_filings", {"query": company, "limit": 5})
-        rows = _parse_tool_result(result)
-        tickers = [r.get("ticker") for r in rows if r.get("ticker")]
-        if not tickers:
-            return None
-        return max(set(tickers), key=tickers.count)
+        desc_args: dict = {
+            "query":          f"{company} founded headquartered operations produces business segments markets employees",
+            "report_type":    "annual_report",
+            "source":         "xbrl_esef",
+            "max_chunk_index": 3,
+            "limit":          3,
+        }
+        if ticker:
+            desc_args["ticker"] = ticker
+        desc_result = await upstream.call_tool("search_filings", desc_args)
+        desc_rows   = _parse_tool_result(desc_result)
+        desc_snippets = [r["text"][:300] for r in desc_rows if r.get("text")]
     except Exception as e:
-        _log.warning(f"Ticker probe failed for {company!r}: {e}")
-        return None
+        _log.warning(f"Description probe failed for {company!r}: {e}")
+
+    return {
+        "ticker":       ticker,
+        "fiscal_years": fiscal_years,
+        "report_types": list(report_types),
+        "sources":      list(sources),
+        "country":      country,
+        "description":  desc_snippets,
+    }
 
 
-async def _plan(company: str, confirmed_ticker: str | None = None) -> dict:
+async def _plan(company: str, probe: dict) -> dict:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
     client = anthropic.AsyncAnthropic(api_key=api_key)
+
     user_msg = f"Today is {datetime.utcnow().strftime('%Y-%m-%d')}. Plan due diligence for: {company}"
-    if confirmed_ticker:
-        user_msg += f"\n\nVerified ticker from database: {confirmed_ticker}"
+
+    if probe.get("ticker"):
+        user_msg += f"\n\nVerified ticker from database: {probe['ticker']}"
+    if probe.get("country"):
+        user_msg += f"\nCountry: {probe['country']}"
+    if probe.get("fiscal_years"):
+        user_msg += f"\nFiscal years in database: {probe['fiscal_years']}"
+    if probe.get("report_types"):
+        user_msg += f"\nReport types available: {probe['report_types']}"
+    if probe.get("sources"):
+        user_msg += f"\nData sources available: {probe['sources']}"
+    if probe.get("description"):
+        snippets = "\n---\n".join(probe["description"])
+        user_msg += f"\n\nBusiness description excerpts from annual reports:\n{snippets}"
+
     response = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1500,
@@ -339,14 +404,19 @@ async def due_diligence_report(
         return {"error": "ANTHROPIC_API_KEY not configured."}
 
     async with Client(UPSTREAM_URL) as upstream:
-        # Step 1: probe for confirmed ticker
-        confirmed_ticker = await _probe_ticker(upstream, company)
+        # Step 1: probe for ticker, metadata and business description
+        try:
+            probe = await _probe(upstream, company)
+        except Exception as e:
+            _log.warning(f"Probe failed for {company!r}: {e}")
+            probe = {"ticker": None, "fiscal_years": [], "report_types": [], "sources": [], "country": None, "description": []}
+        confirmed_ticker = probe["ticker"]
         if confirmed_ticker:
-            _log.info(f'alfred probe ticker="{confirmed_ticker}" for "{company}"')
+            _log.info(f'alfred probe ticker="{confirmed_ticker}" country={probe.get("country")} years={probe.get("fiscal_years")} for "{company}"')
 
         # Step 2: Haiku plans financial/operational/competitor/news sections
         try:
-            plan = await _plan(company, confirmed_ticker)
+            plan = await _plan(company, probe)
         except Exception as e:
             _log.error(f"Planning failed for {company!r}: {e}")
             return {"error": f"Planning failed: {e}"}

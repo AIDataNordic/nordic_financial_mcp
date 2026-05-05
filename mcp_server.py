@@ -228,6 +228,7 @@ async def search_filings(
     sector: Annotated[str, "Filter by sector, e.g. 'energy', 'financials', 'salmon'"] = "",
     country: Annotated[str, "Filter by country: NO, SE, DK, or FI"] = "",
     source: Annotated[str, "Filter by data source, e.g. 'xbrl_esef', 'newsweb', 'mfn_nordics', 'nasdaq_se'"] = "",
+    max_chunk_index: Annotated[int, "Only return chunks with chunk_index <= this value. Use 3 to target introductory sections of long documents. Use 0 for no filter."] = 0,
     limit: Annotated[int, "Number of results to return (1–20)"] = 5,
 ) -> list[dict]:
     """Search the Nordic financial database for company filings, press releases
@@ -294,7 +295,7 @@ async def search_filings(
         return [{"error": "database_unavailable", "message": "The vector database is not reachable in this environment. Use the live server at https://mcp.aidatanorge.no/mcp"}]
 
     import torch
-    from qdrant_client.models import SparseVector, Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
+    from qdrant_client.models import SparseVector, Filter, FieldCondition, MatchValue, Range, Prefetch, FusionQuery, Fusion
 
     limit = min(limit, 20)
     _t0 = time.time()
@@ -338,6 +339,10 @@ async def search_filings(
     if source:
         conditions.append(
             FieldCondition(key="source", match=MatchValue(value=source))
+        )
+    if max_chunk_index:
+        conditions.append(
+            FieldCondition(key="chunk_index", range=Range(lte=max_chunk_index))
         )
 
     query_filter = Filter(must=conditions) if conditions else None
