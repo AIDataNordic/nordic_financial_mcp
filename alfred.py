@@ -228,6 +228,28 @@ def _generate_power_sections(periods: list, power_zones: list) -> list[dict]:
     return sections
 
 
+def _generate_xbrl_sections(company: str, ticker: str) -> list[dict]:
+    """Dedicated sections that fetch directly from xbrl_esef, bypassing newsweb competition."""
+    return [
+        {
+            "name":           "xbrl_financials",
+            "query":          f"{company} revenue operating profit EBIT net income annual report",
+            "report_type":    "annual_report",
+            "source":         "xbrl_esef",
+            "limit":          5,
+            "company_filter": True,
+        },
+        {
+            "name":           "xbrl_risks",
+            "query":          f"{company} risk factors outlook strategy annual report",
+            "report_type":    "annual_report",
+            "source":         "xbrl_esef",
+            "limit":          3,
+            "company_filter": True,
+        },
+    ]
+
+
 def _detect_power_contract(sections_output: dict) -> str:
     """Check power_costs chunks for contract signals. Returns 'contracted' or 'spot'."""
     power_text = " ".join(
@@ -276,7 +298,7 @@ async def _plan(company: str, confirmed_ticker: str | None = None) -> dict:
     response = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1500,
-        system=_PLAN_SYSTEM,
+        system=[{"type": "text", "text": _PLAN_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_msg}],
     )
     return json.loads(_strip_json(response.content[0].text))
@@ -337,11 +359,13 @@ async def due_diligence_report(
         macro_factors = plan.get("macro_factors") or SECTOR_MACRO_DEFAULTS.get(sector, [])
 
         # Step 4: extract financial periods and generate aligned macro + power sections
+        # Use all periods for macro, but only the most recent for power (reduces section count)
         periods         = _extract_periods(haiku_sections)
-        macro_sections  = _generate_macro_sections(periods, macro_factors)
-        power_sections  = _generate_power_sections(periods, power_zones)
+        macro_sections  = _generate_macro_sections(periods[:1], macro_factors)
+        power_sections  = _generate_power_sections(periods[:1], power_zones)
 
-        all_sections = haiku_sections + macro_sections + power_sections
+        xbrl_sections  = _generate_xbrl_sections(company, confirmed_ticker)
+        all_sections = haiku_sections + xbrl_sections + macro_sections + power_sections
 
         _log.info(
             f'alfred company="{company}" ticker={plan.get("ticker")} sector={sector} '
@@ -362,6 +386,9 @@ async def due_diligence_report(
             rt = s.get("report_type", "")
             if rt:
                 args["report_type"] = rt
+            src = s.get("source", "")
+            if src:
+                args["source"] = src
             fy = int(s.get("fiscal_year") or 0)
             if fy and not s.get("zone_ticker"):  # ENTSO-E data has no fiscal_year
                 args["fiscal_year"] = fy

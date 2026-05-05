@@ -227,6 +227,7 @@ async def search_filings(
     report_type: Annotated[str, "Filter by type: annual_report, quarterly_report, press_release, exchange_announcement, macro_summary"] = "",
     sector: Annotated[str, "Filter by sector, e.g. 'energy', 'financials', 'salmon'"] = "",
     country: Annotated[str, "Filter by country: NO, SE, DK, or FI"] = "",
+    source: Annotated[str, "Filter by data source, e.g. 'xbrl_esef', 'newsweb', 'mfn_nordics', 'nasdaq_se'"] = "",
     limit: Annotated[int, "Number of results to return (1–20)"] = 5,
 ) -> list[dict]:
     """Search the Nordic financial database for company filings, press releases
@@ -334,6 +335,10 @@ async def search_filings(
         conditions.append(
             FieldCondition(key="country", match=MatchValue(value=country.upper()))
         )
+    if source:
+        conditions.append(
+            FieldCondition(key="source", match=MatchValue(value=source))
+        )
 
     query_filter = Filter(must=conditions) if conditions else None
 
@@ -402,6 +407,7 @@ async def search_filings(
             "report_type":   p.get("report_type"),
             "period":        p.get("period") or p.get("period_ending"),
             "filing_date":   p.get("filing_date") or p.get("published_date"),
+            "source":        p.get("source"),
             "text":          p.get("text"),
             "chunk_index":   p.get("chunk_index"),
             "total_chunks":  p.get("total_chunks"),
