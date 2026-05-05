@@ -206,12 +206,12 @@ get_current_power_price(
 # Handles both PT60M (hourly) and PT15M (15-min) resolutions.
 ```
 
-### `due_diligence_report`
+### `company_research`
 
-Run multiple targeted searches in a single call and get results grouped by section — designed for agent-driven due diligence workflows.
+Run multiple targeted searches in a single call and get raw results grouped by section. The caller defines all sections and queries and is responsible for synthesizing the output.
 
 ```python
-due_diligence_report(
+company_research(
     company="Equinor",
     sections=[
         {"name": "financials", "query": "Equinor revenue EBITDA operating profit 2024", "ticker": "EQNR"},
@@ -226,7 +226,7 @@ due_diligence_report(
 # that merely mention the company as a customer or competitor.
 ```
 
-The agent defines all sections and queries — the tool does not decide what is relevant. Reason about which topics matter for the specific company before calling: financial metrics, risk factors, sector-specific macro drivers, recent press releases, peer context.
+For a fully orchestrated due diligence report where AI plans the sections and synthesizes the narrative, use [Alfred MCP](https://alfred.aidatanorge.no/mcp) instead.
 
 ### `ping`
 
