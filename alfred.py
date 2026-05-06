@@ -303,6 +303,16 @@ async def _probe(upstream: "Client", company: str) -> dict:
         ticker = max(set(xbrl_tickers), key=xbrl_tickers.count)
     elif all_tickers:
         ticker = max(set(all_tickers), key=all_tickers.count)
+    else:
+        # Fallback for companies whose press releases lack ticker (e.g. Finnish nasdaq_fi).
+        # Search directly in xbrl_esef where tickers are always populated.
+        try:
+            fb = await upstream.call_tool("search_filings", {"query": company, "source": "xbrl_esef", "limit": 5})
+            fb_tickers = [r.get("ticker") for r in _parse_tool_result(fb) if r.get("ticker")]
+            if fb_tickers:
+                ticker = max(set(fb_tickers), key=fb_tickers.count)
+        except Exception:
+            pass
 
     fiscal_years = sorted({int(r["fiscal_year"]) for r in rows if r.get("fiscal_year")}, reverse=True)
     report_types = {r["report_type"] for r in rows if r.get("report_type")}
@@ -438,7 +448,8 @@ async def due_diligence_report(
         all_sections = haiku_sections + xbrl_sections + macro_sections + power_sections
 
         _log.info(
-            f'alfred company="{company}" ticker={plan.get("ticker")} sector={sector} '
+            f'alfred company="{company}" ticker_confirmed={confirmed_ticker} '
+            f'ticker_haiku={plan.get("ticker")} sector={sector} '
             f'periods={periods} macro_factors={macro_factors} power_zones={power_zones} '
             f'sections={len(haiku_sections)}+{len(macro_sections)}macro+{len(power_sections)}power'
         )
@@ -464,21 +475,39 @@ async def due_diligence_report(
                 args["fiscal_year"] = fy
             return args
 
+        section_args = [(s, _build_args(s)) for s in all_sections]
+        for s, args in section_args:
+            _log.info(
+                f'alfred search start company="{company}" section="{s["name"]}" '
+                f'args={json.dumps(args, ensure_ascii=False, sort_keys=True)}'
+            )
+
         search_coros = [
-            upstream.call_tool("search_filings", _build_args(s))
-            for s in all_sections
+            upstream.call_tool("search_filings", args)
+            for _, args in section_args
         ]
 
         all_results = await asyncio.gather(*search_coros, return_exceptions=True)
 
     # Step 6: assemble output
     output_sections: dict = {}
-    for s, result in zip(all_sections, all_results):
+    for (s, args), result in zip(section_args, all_results):
         if isinstance(result, Exception):
-            _log.warning(f"Section {s['name']} failed: {result}")
+            _log.warning(
+                f'alfred search failed company="{company}" section="{s["name"]}" '
+                f'args={json.dumps(args, ensure_ascii=False, sort_keys=True)} '
+                f'error={result!r}'
+            )
             output_sections[s["name"]] = []
         else:
-            output_sections[s["name"]] = _parse_tool_result(result)
+            parsed = _parse_tool_result(result)
+            output_sections[s["name"]] = parsed
+            count = len(parsed) if isinstance(parsed, list) else "n/a"
+            _log.info(
+                f'alfred search done company="{company}" section="{s["name"]}" '
+                f'count={count} result_type={type(parsed).__name__} '
+                f'args={json.dumps(args, ensure_ascii=False, sort_keys=True)}'
+            )
 
     # Step 7: detect power contract from filing text
     spot_price_role = None
