@@ -24,6 +24,8 @@ from typing import Annotated
 import anthropic
 from dotenv import load_dotenv
 from fastmcp import Client, FastMCP
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 load_dotenv()
 
@@ -31,6 +33,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 _log = logging.getLogger("alfred")
 
 UPSTREAM_URL = os.getenv("ALFRED_UPSTREAM_URL", "http://localhost:8003/mcp")
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+COLLECTION = os.getenv("QDRANT_COLLECTION", "nordic_company_data")
 
 # ---------------------------------------------------------------------------
 # Macro factor mappings
@@ -281,6 +286,85 @@ def _strip_json(text: str) -> str:
     return text.strip()
 
 
+def _candidate_tickers_from_company(company: str) -> list[str]:
+    """Extract ticker-like tokens from user input before fuzzy probing."""
+    candidates: list[str] = []
+    for token in re.findall(r"\b[A-ZÆØÅ0-9]{2,8}\b", company):
+        if token in {"AB", "ASA", "AS", "OYJ", "A", "S"}:
+            continue
+        if token not in candidates:
+            candidates.append(token)
+    return candidates
+
+
+def _verify_candidate_ticker_in_qdrant(company: str) -> str | None:
+    """Verify ticker-like input against exact financial_summary payload filters."""
+    company_norm = re.sub(r"[^a-z0-9]+", " ", company.lower()).strip()
+    candidates = _candidate_tickers_from_company(company)
+    if not candidates:
+        return None
+
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
+    except Exception:
+        return None
+
+    for candidate in candidates:
+        try:
+            records, _ = client.scroll(
+                collection_name=COLLECTION,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="source", match=MatchValue(value="extracted_xbrl")),
+                    FieldCondition(key="report_type", match=MatchValue(value="financial_summary")),
+                    FieldCondition(key="ticker", match=MatchValue(value=candidate)),
+                ]),
+                limit=3,
+                with_payload=["company_name", "ticker"],
+                with_vectors=False,
+            )
+        except Exception:
+            continue
+
+        for record in records:
+            payload = record.payload or {}
+            row_company = re.sub(r"[^a-z0-9]+", " ", (payload.get("company_name") or "").lower()).strip()
+            if row_company and (row_company in company_norm or company_norm in row_company):
+                return candidate
+    return None
+
+
+async def _verify_candidate_ticker(upstream: "Client", company: str) -> str | None:
+    """Verify explicit ticker-like input against XBRL summaries.
+
+    This protects short company names like "NOTE AB (publ)" from generic semantic
+    hits on the word "note" outvoting the exact ticker.
+    """
+    verified = _verify_candidate_ticker_in_qdrant(company)
+    if verified:
+        return verified
+
+    company_norm = re.sub(r"[^a-z0-9]+", " ", company.lower()).strip()
+    for candidate in _candidate_tickers_from_company(company):
+        try:
+            result = await upstream.call_tool("search_filings", {
+                "query":       company,
+                "ticker":      candidate,
+                "source":      "extracted_xbrl",
+                "report_type": "financial_summary",
+                "limit":       3,
+            })
+        except Exception:
+            continue
+
+        for row in _parse_tool_result(result):
+            if row.get("ticker") != candidate:
+                continue
+            row_company = re.sub(r"[^a-z0-9]+", " ", (row.get("company") or "").lower()).strip()
+            if row_company and (row_company in company_norm or company_norm in row_company):
+                return candidate
+    return None
+
+
 async def _probe(upstream: "Client", company: str) -> dict:
     """Probe Qdrant for ticker, metadata and business description before planning.
 
@@ -292,25 +376,76 @@ async def _probe(upstream: "Client", company: str) -> dict:
       country       — most common country code
       description   — 2-3 text snippets from early annual report chunks
     """
+    verified_input_ticker = await _verify_candidate_ticker(upstream, company)
+
     result = await upstream.call_tool("search_filings", {"query": company, "limit": 10})
     rows = _parse_tool_result(result)
+    if verified_input_ticker:
+        try:
+            verified_result = await upstream.call_tool("search_filings", {
+                "query":  company,
+                "ticker": verified_input_ticker,
+                "limit":  10,
+            })
+            verified_rows = _parse_tool_result(verified_result)
+            if verified_rows:
+                rows = verified_rows
+        except Exception:
+            pass
+
+    company_norm = re.sub(r"[^a-z0-9]+", " ", company.lower()).strip()
+
+    def _name_matches(row_company: str) -> bool:
+        c = re.sub(r"[^a-z0-9]+", " ", (row_company or "").lower()).strip()
+        if not c:
+            return False
+        return c in company_norm or company_norm in c or c[:8] in company_norm or company_norm[:8] in c
+
+    def _best_ticker(candidates: list[str]) -> str | None:
+        """Pick ticker whose company name best matches query, falling back to most common."""
+        company_by_ticker: dict[str, str] = {}
+        for r in rows:
+            t = r.get("ticker")
+            if t and t not in company_by_ticker and r.get("company"):
+                company_by_ticker[t] = r["company"]
+        # Prefer tickers whose company name matches
+        for t in sorted(set(candidates), key=candidates.count, reverse=True):
+            if _name_matches(company_by_ticker.get(t, "")):
+                return t
+        # Fall back to most common — but only if the top candidate's company is plausible
+        most_common = max(set(candidates), key=candidates.count)
+        if _name_matches(company_by_ticker.get(most_common, "")):
+            return most_common
+        return None
 
     xbrl_sources = {"xbrl_esef", "extracted_xbrl"}
     xbrl_tickers = [r.get("ticker") for r in rows if r.get("ticker") and r.get("source") in xbrl_sources]
     all_tickers  = [r.get("ticker") for r in rows if r.get("ticker")]
-    ticker = None
-    if xbrl_tickers:
-        ticker = max(set(xbrl_tickers), key=xbrl_tickers.count)
+    ticker = verified_input_ticker
+    if ticker:
+        pass
+    elif xbrl_tickers:
+        ticker = _best_ticker(xbrl_tickers)
     elif all_tickers:
-        ticker = max(set(all_tickers), key=all_tickers.count)
+        ticker = _best_ticker(all_tickers)
     else:
         # Fallback for companies whose press releases lack ticker (e.g. Finnish nasdaq_fi).
         # Search directly in xbrl_esef where tickers are always populated.
         try:
             fb = await upstream.call_tool("search_filings", {"query": company, "source": "xbrl_esef", "limit": 5})
-            fb_tickers = [r.get("ticker") for r in _parse_tool_result(fb) if r.get("ticker")]
+            fb_rows = _parse_tool_result(fb)
+            fb_tickers = [r.get("ticker") for r in fb_rows if r.get("ticker")]
             if fb_tickers:
-                ticker = max(set(fb_tickers), key=fb_tickers.count)
+                fb_names: dict[str, str] = {}
+                for r in fb_rows:
+                    t = r.get("ticker")
+                    if t and t not in fb_names and r.get("company"):
+                        fb_names[t] = r["company"]
+                ticker = next(
+                    (t for t in sorted(set(fb_tickers), key=fb_tickers.count, reverse=True)
+                     if _name_matches(fb_names.get(t, ""))),
+                    None,
+                )
         except Exception:
             pass
 

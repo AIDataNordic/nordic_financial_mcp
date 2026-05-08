@@ -25,6 +25,7 @@ QDRANT_HOST      = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+FAST_MODE        = os.getenv("FAST_MODE", "0") == "1"  # skip reranking, use RRF score directly
 
 _qdrant = None
 _model = None
@@ -369,35 +370,39 @@ async def search_filings(
         return []
 
     candidates = results.points
-    pairs = [(query, p.payload.get("text", "")) for p in candidates]
-    with torch.no_grad():
-        rerank_scores = await loop.run_in_executor(
-            None, lambda: _reranker.predict(pairs)
+
+    if FAST_MODE:
+        ranked = [(p.score, 0.0, p) for p in candidates]
+    else:
+        pairs = [(query, p.payload.get("text", "")) for p in candidates]
+        with torch.no_grad():
+            rerank_scores = await loop.run_in_executor(
+                None, lambda: _reranker.predict(pairs)
+            )
+
+        r_scores = [float(s) for s in rerank_scores]
+        v_scores = [p.score for p in candidates]
+        v_max = max(v_scores) or 1e-8
+
+        hybrid_scores = [
+            r * (1.0 + 0.3 * (v / v_max))
+            for r, v in zip(r_scores, v_scores)
+        ]
+
+        ranked = sorted(
+            zip(hybrid_scores, r_scores, candidates),
+            key=lambda x: x[0],
+            reverse=True,
         )
-
-    # Hybrid scoring: vector_score boosts rerank multiplicatively — can tip ties but can't rescue weak reranks
-    r_scores = [float(s) for s in rerank_scores]
-    v_scores = [p.score for p in candidates]
-    v_max = max(v_scores) or 1e-8
-
-    hybrid_scores = [
-        r * (1.0 + 0.3 * (v / v_max))
-        for r, v in zip(r_scores, v_scores)
-    ]
-
-    ranked = sorted(
-        zip(hybrid_scores, r_scores, candidates),
-        key=lambda x: x[0],
-        reverse=True,
-    )
 
     output = []
     for hybrid_score, rerank_score, point in ranked:
         if len(output) >= limit:
             break
-        # Discard cross-encoder false positives: high rerank score but near-zero vector similarity
-        if rerank_score > 7.0 and point.score < 0.05:
-            continue
+        if not FAST_MODE:
+            strict_metadata_filter = bool(ticker and (source or report_type or fiscal_year))
+            if not strict_metadata_filter and rerank_score > 7.0 and point.score < 0.05:
+                continue
         p = point.payload
         is_macro = p.get("report_type") == "macro"
         output.append({

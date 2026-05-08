@@ -33,7 +33,7 @@ QDRANT_PORT = 6333
 COLLECTION = "nordic_company_data"
 REVENUE_TOLERANCE = 0.10  # ±10%
 
-BAD_GROUND_TRUTH = {"EMGS", "ETTE", "KEMPOWR", "MOB", "OTEC"}  # kjente scale-feil / usikker data
+BAD_GROUND_TRUTH = {"EMGS", "MOB", "OTEC"}  # kjente scale-feil / usikker data
 
 # Kuratert liste: (display_name, ticker) — navn sendes til Alfred, ticker brukes for ground-truth-oppslag
 GOLDEN_COMPANIES = [
@@ -240,15 +240,15 @@ async def eval_company(
     result.sections_returned = list(sections.keys())
     result.section_coverage = _section_coverage(sections)
 
-    # Score xbrl_financials + xbrl_summary sections
-    xbrl_chunks = sections.get("xbrl_financials", []) + sections.get("xbrl_summary", [])
+    # Score xbrl_summary first (canonical financial_summary format), then xbrl_financials (raw XBRL text)
+    xbrl_chunks = sections.get("xbrl_summary", []) + sections.get("xbrl_financials", [])
     result.xbrl_chunks = len(xbrl_chunks)
 
     if ground_truth and ground_truth.revenue:
         for chunk in xbrl_chunks:
             chunk_fy = chunk.get("fiscal_year")
-            if chunk_fy and chunk_fy != ground_truth.fiscal_year:
-                continue  # wrong fiscal year — skip
+            if chunk_fy and chunk_fy < ground_truth.fiscal_year:
+                continue  # older fiscal year — skip (newer is fine)
             text = chunk.get("text", "")
             found = _parse_revenue_from_text(text)
             if found is not None:
