@@ -379,7 +379,8 @@ async def _probe(upstream: "Client", company: str) -> dict:
     verified_input_ticker = await _verify_candidate_ticker(upstream, company)
 
     result = await upstream.call_tool("search_filings", {"query": company, "limit": 10})
-    rows = _parse_tool_result(result)
+    general_rows = _parse_tool_result(result)
+    rows = general_rows
     if verified_input_ticker:
         try:
             verified_result = await upstream.call_tool("search_filings", {
@@ -401,10 +402,10 @@ async def _probe(upstream: "Client", company: str) -> dict:
             return False
         return c in company_norm or company_norm in c or c[:8] in company_norm or company_norm[:8] in c
 
-    def _best_ticker(candidates: list[str]) -> str | None:
+    def _best_ticker(candidates: list[str], lookup_rows: list | None = None) -> str | None:
         """Pick ticker whose company name best matches query, falling back to most common."""
         company_by_ticker: dict[str, str] = {}
-        for r in rows:
+        for r in (lookup_rows if lookup_rows is not None else rows):
             t = r.get("ticker")
             if t and t not in company_by_ticker and r.get("company"):
                 company_by_ticker[t] = r["company"]
@@ -419,18 +420,22 @@ async def _probe(upstream: "Client", company: str) -> dict:
         return None
 
     xbrl_sources = {"xbrl_esef", "extracted_xbrl"}
-    xbrl_tickers = [r.get("ticker") for r in rows if r.get("ticker") and r.get("source") in xbrl_sources]
+    # Use unfiltered general_rows for XBRL extraction — avoids ADR/alias tickers overriding
+    # the primary exchange ticker that XBRL data is indexed under.
+    xbrl_tickers = [r.get("ticker") for r in general_rows if r.get("ticker") and r.get("source") in xbrl_sources]
     all_tickers  = [r.get("ticker") for r in rows if r.get("ticker")]
-    ticker = verified_input_ticker
-    if ticker:
-        pass
-    elif xbrl_tickers:
-        ticker = _best_ticker(xbrl_tickers)
+    if xbrl_tickers:
+        ticker = _best_ticker(xbrl_tickers, lookup_rows=general_rows)
+    elif verified_input_ticker:
+        ticker = verified_input_ticker
     elif all_tickers:
         ticker = _best_ticker(all_tickers)
     else:
-        # Fallback for companies whose press releases lack ticker (e.g. Finnish nasdaq_fi).
-        # Search directly in xbrl_esef where tickers are always populated.
+        ticker = None
+
+    # If we have a ticker but it has no XBRL coverage, search xbrl_esef by company name
+    # to find the ticker the XBRL data is actually indexed under (e.g. NOD→NRSDY, GCC→GCCNOK).
+    if not xbrl_tickers or ticker is None:
         try:
             fb = await upstream.call_tool("search_filings", {"query": company, "source": "xbrl_esef", "limit": 5})
             fb_rows = _parse_tool_result(fb)
@@ -441,11 +446,13 @@ async def _probe(upstream: "Client", company: str) -> dict:
                     t = r.get("ticker")
                     if t and t not in fb_names and r.get("company"):
                         fb_names[t] = r["company"]
-                ticker = next(
+                fb_ticker = next(
                     (t for t in sorted(set(fb_tickers), key=fb_tickers.count, reverse=True)
                      if _name_matches(fb_names.get(t, ""))),
                     None,
                 )
+                if fb_ticker:
+                    ticker = fb_ticker
         except Exception:
             pass
 
