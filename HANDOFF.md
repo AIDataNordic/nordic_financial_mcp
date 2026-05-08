@@ -6,6 +6,7 @@
 - Qdrant localhost:6333, ~1.109M vektorer — grønn
 
 ## Siste commits
+- `37a9b82` — Probe ticker-resolusjon: XBRL-prioritet, xbrl_esef navne-fallback (NOD→NRSDY, GCC→GCCNOK, CapMan)
 - `2121745` — Probe ticker-validering, eval FY/chunk-rekkefølge, FAST_MODE
 
 ## eval_results_100_v3.json — 42/100 (ikke representativ)
@@ -37,13 +38,19 @@ Skrur av cross-encoder reranking — reduserer latens fra ~250s til ~70s per sel
 For produksjon bør dette vurderes fjernet (reranking gir bedre kvalitet).
 Skru av: `sudo rm /etc/systemd/system/nordic-mcp.service.d/override.conf && sudo systemctl daemon-reload && sudo systemctl restart nordic-mcp.service`
 
+## eval_results_20260508.json — 62/100
+Kjørt 2026-05-08. Gjenstående feilkategorier:
+1. **ticker=None i XBRL** (~3 selskaper bekreftet: ØRSTED/DNNGY, AGF, Neste/NTOIY) — se BACKLOG
+2. **Datahull** — PHO, DSV og flere mangler XBRL helt
+3. **Svensk ingest ufullstendig** — ASSAB, CCC, etc. mangler XBRL inntil SE-ingest er ferdig
+4. **fiscal_year-gap** — KONE/KNYJY har XBRL kun til FY2023, Alfred søker FY2025
+
 ## Gjenstående problemer
 | Problem | Status |
 |---------|--------|
-| ADR-ticker aliasing (NRSDY/NOD, etc.) | Fikset — XBRL-ticker prioriteres over verified_input_ticker |
-| Island-ingest krasjet (Qdrant-timeout) | Kan restartes: `nohup venv/bin/python3 nasdaq_is_ingest.py >> ~/logs/nasdaq_is_ingest.log 2>&1 &` (hopper over prosesserte via `nasdaq_is_processed.txt`) |
-| Batch-patch hard suspects (205 stk) | Kjørt — bekreftet via Qdrant (f.eks. TRH1V FY2022: 975336840 → 975.34 EURm) |
-| Re-kjøre eval uten Qdrant-transienter | Neste klare eval bør kjøres på et rolig tidspunkt |
+| XBRL ticker=None backfill | Åpent — se BACKLOG |
+| Nasdaq SE-ingest (Vast) | Stoppet pga. Qdrant-timeout på Vast — restart når Qdrant er oppe |
+| Re-kjøre eval etter SE-ingest | Vent til SE-ingest er ferdig for representativt tall |
 
 ## Nøkkelfiler
 - `eval_results_100.json` — 80/100 baseline (gyldig, mai 2026)
