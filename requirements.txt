@@ -1,6 +1,6 @@
 fastmcp==3.2.4
 fastapi==0.136.1
-qdrant-client==1.17.1
+qdrant-client==1.18.0
 fastembed==0.8.0
 sentence-transformers==5.4.1
 python-dotenv==1.2.2
