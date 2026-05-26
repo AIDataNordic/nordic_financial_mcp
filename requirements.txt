@@ -1,5 +1,5 @@
 fastmcp==3.2.4
-fastapi==0.136.1
+fastapi==0.136.3
 qdrant-client==1.17.1
 fastembed==0.8.0
 sentence-transformers==5.4.1
