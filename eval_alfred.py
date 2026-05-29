@@ -16,6 +16,7 @@ Kjøring:
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
 import time
@@ -315,15 +316,49 @@ def print_report(results: list[EvalResult]) -> None:
                     print(f"    {sec}: {count} chunks")
 
 
+def result_to_dict(r: EvalResult) -> dict:
+    return {
+        "company": r.company_name,
+        "ticker": r.ticker,
+        "ticker_confirmed": r.ticker_confirmed,
+        "gt_fiscal_year": r.ground_truth.fiscal_year if r.ground_truth else None,
+        "gt_revenue": r.ground_truth.revenue if r.ground_truth else None,
+        "gt_currency": r.ground_truth.currency if r.ground_truth else None,
+        "revenue_found": r.revenue_found,
+        "revenue_match": r.revenue_match,
+        "xbrl_chunks": r.xbrl_chunks,
+        "alfred_elapsed": r.alfred_elapsed,
+        "alfred_error": r.alfred_error,
+        "section_coverage": r.section_coverage,
+    }
+
+
+def save_results(rows: list[dict], path: str) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(rows, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--companies", nargs="+", help="Subset av selskapsnavn å evaluere")
     parser.add_argument("--auto", type=int, metavar="N", help="Hent topp N selskaper automatisk fra Qdrant")
     parser.add_argument("--dry-run", action="store_true", help="Hent ground truth men kall ikke Alfred")
     parser.add_argument("--output-json", help="Lagre råresultater til JSON-fil")
+    parser.add_argument("--resume", action="store_true", help="Fortsett fra eksisterende --output-json fil, hopp over allerede evaluerte selskaper")
     args = parser.parse_args()
 
     qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
+
+    # Load existing results if resuming
+    saved_rows: list[dict] = []
+    already_done: set[str] = set()
+    if args.resume and args.output_json and os.path.exists(args.output_json):
+        with open(args.output_json) as f:
+            saved_rows = json.load(f)
+        already_done = {r["ticker"] for r in saved_rows}
+        print(f"Gjenopptar: {len(already_done)} selskaper allerede evaluert.")
 
     if args.auto:
         print(f"Auto-velger topp {args.auto} selskaper fra Qdrant...")
@@ -351,6 +386,10 @@ async def main() -> None:
     else:
         companies = GOLDEN_COMPANIES
 
+    if already_done:
+        companies = [(name, ticker) for name, ticker in companies if ticker not in already_done]
+        print(f"Hopper over {len(already_done)} allerede gjorte, kjører {len(companies)} gjenstående.\n")
+
     print(f"Henter ground truth for {len(companies)} selskaper...")
     ground_truths = {}
     for name, ticker in companies:
@@ -367,36 +406,22 @@ async def main() -> None:
     if args.dry_run:
         print("\n[dry-run] Hopper over Alfred-kall.")
 
+    total = len(already_done) + len(companies)
+    done_so_far = len(already_done)
     print(f"\nKaller Alfred for {len(companies)} selskaper{' (dry-run)' if args.dry_run else ''}...")
     results = []
     for i, (name, ticker) in enumerate(companies, 1):
-        print(f"  [{i}/{len(companies)}] {name}...", end=" ", flush=True)
+        print(f"  [{done_so_far + i}/{total}] {name}...", end=" ", flush=True)
         r = await eval_company(name, ticker, ground_truths.get(ticker), args.dry_run)
         status = r.alfred_error or f"{r.alfred_elapsed:.0f}s, xbrl={r.xbrl_chunks}"
         print(status)
         results.append(r)
+        if args.output_json:
+            save_results(saved_rows + [result_to_dict(x) for x in results], args.output_json)
 
     print_report(results)
 
     if args.output_json:
-        with open(args.output_json, "w") as f:
-            json.dump([
-                {
-                    "company": r.company_name,
-                    "ticker": r.ticker,
-                    "ticker_confirmed": r.ticker_confirmed,
-                    "gt_fiscal_year": r.ground_truth.fiscal_year if r.ground_truth else None,
-                    "gt_revenue": r.ground_truth.revenue if r.ground_truth else None,
-                    "gt_currency": r.ground_truth.currency if r.ground_truth else None,
-                    "revenue_found": r.revenue_found,
-                    "revenue_match": r.revenue_match,
-                    "xbrl_chunks": r.xbrl_chunks,
-                    "alfred_elapsed": r.alfred_elapsed,
-                    "alfred_error": r.alfred_error,
-                    "section_coverage": r.section_coverage,
-                }
-                for r in results
-            ], f, indent=2, ensure_ascii=False)
         print(f"\nRåresultater lagret til {args.output_json}")
 
 

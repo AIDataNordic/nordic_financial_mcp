@@ -99,8 +99,8 @@ def load_existing() -> set[tuple]:
     return existing
 
 
-def run(dry_run: bool, ticker_filter: Optional[str]):
-    existing = load_existing()
+def run(dry_run: bool, ticker_filter: Optional[str], force: bool = False):
+    existing = load_existing() if not force else set()
 
     must = [
         FieldCondition(key="source", match=MatchValue(value="xbrl_esef")),
@@ -209,5 +209,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--ticker", default=None)
+    parser.add_argument("--force", action="store_true", help="Re-upsert all, overwrite existing")
     args = parser.parse_args()
-    run(dry_run=args.dry_run, ticker_filter=args.ticker)
+    run(dry_run=args.dry_run, ticker_filter=args.ticker, force=args.force)
