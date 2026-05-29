@@ -105,46 +105,39 @@ Sjekk fremdrift:
 grep -c "ratio old/new=1000" ~/logs/xbrl_reparse_review.log && grep "Done\." ~/logs/xbrl_reparse_review.log
 ```
 
-## Eval-resultater — 2026-05-28 (50 selskaper)
+## Eval-resultater — 2026-05-29 (50 selskaper) ✅
+
+Fil: `eval_results_20260529.json`
+
+| Metrikk | Før (28/5) | Etter (29/5) |
+|---------|-----------|-------------|
+| Revenue match | 94% | **96%** |
+| news_2026 treffrate | 9% | **52%** |
+| news_2025 treffrate | 10% | **70%** |
+| risks treffrate | 18% | **100%** |
+| xbrl_financials treffrate | 82% | **98%** |
+| xbrl_summary treffrate | 96% | **98%** |
+
+### Fikser som ga forbedringen (2026-05-29)
+
+1. **mcp_server.py** — Nested Qdrant `should`-filter fjernet. Rotårsak til 0-resultater for alle ticker-søk på store collections. Fikset risks (18%→100%), news, og financials fritekst i ett steg.
+2. **alfred.py** — Fjernet `fiscal_year`-filter for news-seksjoner + post-filter: behold kun chunks der ticker matcher eller selskapsnavnet finnes i teksten.
+3. **xbrl_ticker_patch.py `--source`** — Backfill av ticker for 304 315 records: nasdaq_dk (134k) og nasdaq_fi (170k). Bedre news-filtrering for DK/FI-selskaper.
+
+### Gjenstående svakheter
+- `BioGaia AB` — ticker BIOGB i eval, BGLA i Qdrant → 0 XBRL-chunks
+- `United Bankers Oyj` — finansielt selskap, revenue=None (mangler riktig XBRL-tag)
+- News 2026 på 52% — ~120 DK/FI-selskaper mangler fortsatt ticker-match
+
+## Eval-resultater — 2026-05-28 (50 selskaper, pre-fiks)
 
 Fil: `eval_results_20260528.json`
 
 | Metrikk | Resultat |
 |---------|---------|
-| Revenue match | **47/50 (94%)** |
-| Ticker ikke bekreftet | 3 (Hampiðjan, AEGA, IRLAB) |
-| Gjennomsnittlig kjøretid | 134s (min 31s, max 205s) |
-
-### Seksjondekning (snitt 0–5 / treffrate)
-| Seksjon | Snitt | Treff |
-|---------|-------|-------|
-| xbrl_summary | 3.6 | 96% |
-| xbrl_financials | 3.7 | 82% |
-| xbrl_risks | 2.7 | 94% |
-| competitors | 2.8 | 93% |
-| macro/power | 2.8 | 100% |
-| financials (fritekst) | 1.1 | 30% |
-| operations | 1.0 | 20% |
-| risks (fritekst) | 0.9 | 18% |
-| **news** | **0.3** | **10%** |
-
-### Funn og kjente svakheter
-
-**Nyhetshenting er brutt** — 10% treffrate på tvers av alle 114 nyhetsspørsmål. Den klart største forbedringmuligheten.
-
-**Feil selskap ved raske kjøringer** — IRLAB (31s), Hampiðjan (37s) og AEGA (40s) fullførte med perfekt seksjondekning men `ticker_confirmed=None`. Trolig treff på feil selskap — se som data-støy, ikke suksess.
-
-**Konkurrentvalg er LLM-gjetting** — Lagercrantz og Indutrade dukker opp som "konkurrenter" for svært ulike selskaper (fotballklubb, MarTech, plastprodukter). Seksjonene scorer 3 (relé-nivå, alltid funnet) men er meningsløse for mange selskaper.
-
-**Revenue-feil:**
-- `United Bankers Oyj` — finansielt selskap, revenue=None (mangler riktig XBRL-tag?)
-- `Heimar hf.` — islandsk eiendom, revenue=None
-- `BioGaia AB` — ticker BIOGB mismatch (bekreftet som BGLA), 0 XBRL-chunks
-
-### Neste forbedringssteg
-1. **Nyhetshenting** — undersøk hvorfor news-seksjoner konsekvent returnerer 0
-2. **BioGaia ticker-mismatch** — BIOGB vs BGLA
-3. **Konkurrentfiltrering** — ikke foreslå Lagercrantz/Indutrade for ikke-industriselskaper
+| Revenue match | 47/50 (94%) |
+| risks treffrate | 18% |
+| news treffrate | 10% |
 
 ## Scale-bug — rotårsak og full forklaring
 iXBRL: `scale=3, format="ixt:num-comma-decimal", value="720.405"` → `parse_numeric` tolker `.` som europeisk tusenskilletegn → returnerer 720405. Uten scale-normalisering (pre-2026-05-05-ingest) lagres 720405 million DKK (1000x for høyt). Med korrekt parser: 720405 × 10³ / 10⁶ = 720.405M ✓.
