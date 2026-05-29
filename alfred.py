@@ -598,13 +598,14 @@ async def due_diligence_report(
 
         # Step 5: fire all searches in parallel
         def _build_args(s: dict) -> dict:
+            is_news = s.get("name", "").startswith("news_")
             args = {
                 "query": s.get("query", ""),
                 "limit": min(int(s.get("limit", 5)), 10),
             }
             if s.get("zone_ticker"):
                 args["ticker"] = s["zone_ticker"]
-            elif s.get("company_filter") and confirmed_ticker:
+            elif s.get("company_filter") and confirmed_ticker and not is_news:
                 args["ticker"] = confirmed_ticker
             rt = s.get("report_type", "")
             if rt:
@@ -613,7 +614,7 @@ async def due_diligence_report(
             if src:
                 args["source"] = src
             fy = int(s.get("fiscal_year") or 0)
-            if fy and not s.get("zone_ticker"):  # ENTSO-E data has no fiscal_year
+            if fy and not s.get("zone_ticker") and not is_news:
                 args["fiscal_year"] = fy
             return args
 
@@ -624,10 +625,13 @@ async def due_diligence_report(
                 f'args={json.dumps(args, ensure_ascii=False, sort_keys=True)}'
             )
 
-        search_coros = [
-            upstream.call_tool("search_filings", args)
-            for _, args in section_args
-        ]
+        sem = asyncio.Semaphore(5)
+
+        async def _throttled(args):
+            async with sem:
+                return await upstream.call_tool("search_filings", args)
+
+        search_coros = [_throttled(args) for _, args in section_args]
 
         all_results = await asyncio.gather(*search_coros, return_exceptions=True)
 
@@ -643,6 +647,22 @@ async def due_diligence_report(
             output_sections[s["name"]] = []
         else:
             parsed = _parse_tool_result(result)
+            # Post-filter news: drop confirmed-wrong-ticker; for ticker=None also require company name in text
+            if s.get("name", "").startswith("news_") and confirmed_ticker and isinstance(parsed, list):
+                name_hint = company.lower()
+                ticker_hint = confirmed_ticker.lower()
+                def _news_relevant(c):
+                    if not isinstance(c, dict):
+                        return True
+                    cticker = (c.get("ticker") or "").upper()
+                    if cticker and cticker == confirmed_ticker.upper():
+                        return True
+                    if cticker and cticker != confirmed_ticker.upper():
+                        return False
+                    # ticker is None/empty — check text
+                    text_lower = (c.get("text") or "").lower()
+                    return name_hint in text_lower or ticker_hint in text_lower
+                parsed = [c for c in parsed if _news_relevant(c)]
             output_sections[s["name"]] = parsed
             count = len(parsed) if isinstance(parsed, list) else "n/a"
             _log.info(

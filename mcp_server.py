@@ -5,6 +5,7 @@ summaries, with hybrid dense+sparse retrieval and cross-encoder reranking.
 """
 
 import os
+import re
 import sys
 import asyncio
 import logging
@@ -26,12 +27,14 @@ QDRANT_PORT      = int(os.getenv("QDRANT_PORT", "6333"))
 RERANK_FETCH     = 20
 RERANK_MODEL     = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 FAST_MODE        = os.getenv("FAST_MODE", "0") == "1"  # skip reranking, use RRF score directly
+_MACRO_SYMBOL_RE = re.compile(r'[=\-]|^(NO[1-5]|SE[1-4]|DK[12]|FI)$', re.IGNORECASE)
 
 _qdrant = None
 _model = None
 _sparse_model = None
 _reranker = None
 _models_loaded = False
+_rerank_semaphore: asyncio.Semaphore | None = None
 
 
 def _ensure_models():
@@ -231,6 +234,7 @@ async def search_filings(
     source: Annotated[str, "Filter by data source, e.g. 'xbrl_esef', 'newsweb', 'mfn_nordics', 'nasdaq_se'"] = "",
     max_chunk_index: Annotated[int, "Only return chunks with chunk_index <= this value. Use 3 to target introductory sections of long documents. Use 0 for no filter."] = 0,
     limit: Annotated[int, "Number of results to return (1–20)"] = 5,
+    fast: Annotated[bool, "Skip reranking and return results ranked by hybrid score only. Faster but less precise."] = False,
 ) -> list[dict]:
     """Search the Nordic financial database for company filings, press releases
     and macroeconomic summaries.
@@ -317,10 +321,10 @@ async def search_filings(
 
     conditions = []
     if ticker:
-        conditions.append(Filter(should=[
-            FieldCondition(key="ticker",       match=MatchValue(value=ticker.upper())),
-            FieldCondition(key="macro_symbol", match=MatchValue(value=ticker.upper())),
-        ]))
+        if _MACRO_SYMBOL_RE.search(ticker):
+            conditions.append(FieldCondition(key="macro_symbol", match=MatchValue(value=ticker.upper())))
+        else:
+            conditions.append(FieldCondition(key="ticker", match=MatchValue(value=ticker.upper())))
     if fiscal_year:
         conditions.append(
             FieldCondition(key="fiscal_year", match=MatchValue(value=fiscal_year))
@@ -348,7 +352,7 @@ async def search_filings(
 
     query_filter = Filter(must=conditions) if conditions else None
 
-    fetch_limit = max(RERANK_FETCH, limit * 4)
+    fetch_limit = RERANK_FETCH
     try:
         results = _qdrant.query_points(
             collection_name=COLLECTION_NAME,
@@ -371,14 +375,18 @@ async def search_filings(
 
     candidates = results.points
 
-    if FAST_MODE:
+    if FAST_MODE or fast:
         ranked = [(p.score, 0.0, p) for p in candidates]
     else:
+        global _rerank_semaphore
+        if _rerank_semaphore is None:
+            _rerank_semaphore = asyncio.Semaphore(2)
         pairs = [(query, p.payload.get("text", "")) for p in candidates]
-        with torch.no_grad():
-            rerank_scores = await loop.run_in_executor(
-                None, lambda: _reranker.predict(pairs)
-            )
+        async with _rerank_semaphore:
+            with torch.no_grad():
+                rerank_scores = await loop.run_in_executor(
+                    None, lambda: _reranker.predict(pairs)
+                )
 
         r_scores = [float(s) for s in rerank_scores]
         v_scores = [p.score for p in candidates]
