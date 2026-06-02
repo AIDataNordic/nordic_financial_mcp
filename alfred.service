@@ -1,0 +1,17 @@
+[Unit]
+Description=Alfred — Nordic Due Diligence MCP Server
+After=network.target nordic-mcp.service
+
+[Service]
+Type=simple
+User=mini-hal
+WorkingDirectory=/home/mini-hal/norsk-mcp-server
+ExecStart=/home/mini-hal/norsk-mcp-server/venv/bin/python /home/mini-hal/norsk-mcp-server/alfred.py
+EnvironmentFile=/home/mini-hal/norsk-mcp-server/.env.alfred
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/mini-hal/logs/alfred.log
+StandardError=append:/home/mini-hal/logs/alfred.log
+
+[Install]
+WantedBy=multi-user.target

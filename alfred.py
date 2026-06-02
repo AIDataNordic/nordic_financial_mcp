@@ -26,6 +26,15 @@ from dotenv import load_dotenv
 from fastmcp import Client, FastMCP
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from x402 import x402ResourceServer
+from x402.extensions.bazaar import bazaar_resource_server_extension, declare_discovery_extension
+from x402.extensions.bazaar.resource_service import OutputConfig
+from x402.http import HTTPFacilitatorClient
+from x402.mechanisms.evm.exact.register import register_exact_evm_server
+from x402.mcp import create_payment_wrapper
+from x402.schemas.payments import PaymentRequirements, ResourceInfo
 
 load_dotenv()
 
@@ -96,6 +105,125 @@ mcp = FastMCP(
         "Your agent synthesizes the returned data into a report."
     ),
 )
+
+# ---------------------------------------------------------------------------
+# x402 payment setup
+# ---------------------------------------------------------------------------
+
+_WALLET    = "0x1C903401F5725a0aA839fA0321b183E0A488D3c6"
+_USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # USDC on Base mainnet
+_CDP_FACILITATOR_URL = "https://api.cdp.coinbase.com/platform/v2/x402"
+
+# MCP resource server (x402.org facilitator)
+_mcp_resource_server = register_exact_evm_server(x402ResourceServer(HTTPFacilitatorClient()))
+
+
+def _build_cdp_headers_fn():
+    """Returns a create_headers() callable for CDP JWT auth, or None if not configured."""
+    key_id = os.getenv("CDP_API_KEY_NAME", "")
+    key_secret = os.getenv("CDP_API_KEY_PRIVATE_KEY", "")
+    if not key_id or not key_secret:
+        return None
+
+    from cdp.auth.utils.jwt import JwtOptions, generate_jwt
+
+    _host = "api.cdp.coinbase.com"
+    _base = "/platform/v2/x402"
+
+    def create_headers() -> dict[str, dict[str, str]]:
+        def _auth(method: str, path: str) -> dict[str, str]:
+            token = generate_jwt(JwtOptions(
+                api_key_id=key_id,
+                api_key_secret=key_secret,
+                request_method=method,
+                request_host=_host,
+                request_path=path,
+            ))
+            return {"Authorization": f"Bearer {token}"}
+
+        return {
+            "verify": _auth("POST", f"{_base}/verify"),
+            "settle": _auth("POST", f"{_base}/settle"),
+            "supported": _auth("GET", f"{_base}/supported"),
+        }
+
+    return create_headers
+
+
+_cdp_headers_fn = _build_cdp_headers_fn()
+if _cdp_headers_fn:
+    _cdp_facilitator = HTTPFacilitatorClient({"url": _CDP_FACILITATOR_URL, "create_headers": _cdp_headers_fn})
+    _report_resource_server = register_exact_evm_server(x402ResourceServer(_cdp_facilitator))
+    try:
+        _report_resource_server.initialize()
+        _log.info("CDP facilitator configured for /report verify+settle")
+    except Exception as _cdp_init_err:
+        _log.error("CDP facilitator initialization failed: %s", _cdp_init_err)
+        _report_resource_server = None
+else:
+    _report_resource_server = None
+    _log.warning("CDP_API_KEY_NAME / CDP_API_KEY_PRIVATE_KEY not set — /report verify+settle disabled")  # noqa: E501
+
+_ALFRED_ACCEPTS = [
+    PaymentRequirements(
+        scheme="exact",
+        network="eip155:8453",
+        asset=_USDC_BASE,
+        amount="150000",  # $0.15 USDC (6 decimals)
+        pay_to=_WALLET,
+        max_timeout_seconds=300,
+        extra={"name": "USD Coin", "version": "2"},
+    )
+]
+
+_payment_wrapper = create_payment_wrapper(
+    _mcp_resource_server,
+    accepts=_ALFRED_ACCEPTS,
+    resource=ResourceInfo(
+        url="https://alfred.aidatanorge.no/mcp/tool/due_diligence_report",
+        description="Nordic listed company due diligence — financials, XBRL, filings, news",
+    ),
+)
+
+# Pre-built 402 response for /report — Bazaar discovery extension included.
+# 402 response built manually; verify+settle uses CDP facilitator via _report_resource_server.
+_REPORT_PAYMENT_REQUIRED = {
+    "x402Version": 2,
+    "error": "Payment required",
+    "resource": {
+        "url": "https://alfred.aidatanorge.no/report",
+        "description": "Nordic listed company due diligence — financials, XBRL filings, risk factors and news for companies listed on Oslo Børs, Nasdaq Stockholm, Copenhagen, Helsinki and Iceland",
+        "mimeType": "application/json",
+    },
+    "accepts": [{
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "asset": _USDC_BASE,
+        "amount": "150000",
+        "payTo": _WALLET,
+        "maxTimeoutSeconds": 300,
+        "extra": {"name": "USD Coin", "version": "2"},
+    }],
+    "extensions": declare_discovery_extension(
+        input={"company": "Mowi"},
+        input_schema={
+            "properties": {"company": {"type": "string", "description": "Company name or ticker (e.g. 'Mowi', 'Equinor', 'EQNR')"}},
+            "required": ["company"],
+        },
+        output=OutputConfig(
+            example={
+                "company": "Mowi",
+                "ticker_confirmed": "MOWI",
+                "country": "NO",
+                "sector": "aquaculture",
+                "sections": {},
+            }
+        ),
+    ),
+}
+# bazaar_resource_server_extension enriches info.input with method at runtime when
+# using x402HTTPResourceServer — we're static, so inject manually.
+_REPORT_PAYMENT_REQUIRED["extensions"]["bazaar"]["info"]["input"]["method"] = "GET"
 
 # ---------------------------------------------------------------------------
 # Haiku planning prompt
@@ -533,24 +661,11 @@ def _parse_tool_result(result) -> list | dict:
 
 
 # ---------------------------------------------------------------------------
-# MCP tool
+# Core logic (shared by MCP tool and HTTP /report endpoint)
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
-async def due_diligence_report(
-    company: Annotated[str, "Company name or ticker, e.g. 'Mowi', 'Equinor', 'Norsk Hydro', 'EQNR'"],
-) -> dict:
-    """Get comprehensive due diligence data for any Nordic listed company.
-
-    Returns structured data grouped by section: financials (recent periods),
-    operational metrics, risk factors, sector macro aligned to financial periods,
-    power prices (historical, mapped to financial periods), competitors, and news.
-
-    Alfred handles all search strategy internally. Your agent synthesizes the report.
-
-    Args:
-        company: Company name or ticker
-    """
+async def _run_due_diligence(company: str) -> dict:
+    """Run due diligence for a Nordic listed company."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not configured."}
@@ -690,6 +805,87 @@ async def due_diligence_report(
         "generated_at":     datetime.utcnow().isoformat() + "Z",
         "sections":         output_sections,
     }
+
+
+# ---------------------------------------------------------------------------
+# MCP tool
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+@_payment_wrapper
+async def due_diligence_report(
+    company: Annotated[str, "Company name or ticker, e.g. 'Mowi', 'Equinor', 'Norsk Hydro', 'EQNR'"],
+) -> dict:
+    """Get comprehensive due diligence data for any Nordic listed company.
+
+    Returns structured data grouped by section: financials (recent periods),
+    operational metrics, risk factors, sector macro aligned to financial periods,
+    power prices (historical, mapped to financial periods), competitors, and news.
+
+    Args:
+        company: Company name or ticker
+    """
+    return await _run_due_diligence(company)
+
+
+# ---------------------------------------------------------------------------
+# HTTP /report endpoint (x402-gated, indexed on Agentic.Market Bazaar)
+# ---------------------------------------------------------------------------
+
+@mcp.custom_route("/report", methods=["GET"])
+async def report_handler(request: Request) -> Response:
+    import base64
+    import json as _json
+
+    payment_header = request.headers.get("payment-signature") or request.headers.get("x-payment")
+    if not payment_header:
+        encoded = base64.b64encode(_json.dumps(_REPORT_PAYMENT_REQUIRED).encode()).decode()
+        return Response(
+            content="{}",
+            status_code=402,
+            headers={"payment-required": encoded},
+            media_type="application/json",
+        )
+
+    company = request.query_params.get("company", "").strip()
+    if not company:
+        return JSONResponse({"error": "company parameter required"}, status_code=400)
+
+    if _report_resource_server is None:
+        return JSONResponse({"error": "CDP API key not configured — set CDP_API_KEY_NAME and CDP_API_KEY_PRIVATE_KEY"}, status_code=503)
+
+    from x402.http.utils import decode_payment_signature_header
+
+    try:
+        payload_obj = decode_payment_signature_header(payment_header)
+    except Exception as exc:
+        _log.warning("Malformed payment-signature header: %s", exc)
+        return JSONResponse({"error": "Invalid payment-signature header"}, status_code=402)
+
+    try:
+        verify_result = await _report_resource_server.verify_payment(payload_obj, _ALFRED_ACCEPTS[0])
+    except Exception as exc:
+        _log.error("Facilitator verify error: %s", exc)
+        return JSONResponse({"error": "Payment verification failed"}, status_code=402)
+
+    if not verify_result.is_valid:
+        return JSONResponse(
+            {"error": f"Payment invalid: {verify_result.invalid_reason or verify_result.invalid_message}"},
+            status_code=402,
+        )
+
+    result = await _run_due_diligence(company)
+
+    try:
+        settle_result = await _report_resource_server.settle_payment(payload_obj, _ALFRED_ACCEPTS[0])
+        if not settle_result.success:
+            _log.warning("Settlement failed for %s: %s %s", company, settle_result.error_reason, settle_result.error_message)
+        else:
+            _log.info("Payment settled for %s: tx=%s", company, settle_result.transaction)
+    except Exception as exc:
+        _log.error("Facilitator settle error: %s", exc)
+
+    return JSONResponse(result)
 
 
 if __name__ == "__main__":

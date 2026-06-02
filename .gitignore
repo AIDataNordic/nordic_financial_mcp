@@ -1,6 +1,9 @@
 CLAUDE.md
 NOTES.md
 .env
+.env.alfred
+.mcpregistry_github_token
+.mcpregistry_registry_token
 *.log
 __pycache__/
 venv/
