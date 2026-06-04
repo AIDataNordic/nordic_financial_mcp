@@ -1,4 +1,4 @@
-fastmcp==3.2.4
+fastmcp==3.4.0
 fastapi==0.136.1
 qdrant-client==1.17.1
 fastembed==0.8.0
