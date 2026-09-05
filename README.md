@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.AIDataNordic/nordic-financial-mcp -->
 
-[![smithery badge](https://smithery.ai/badge/kontakt-qy0g/nordic-financial-mcp)](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/score.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp)
+[![LightNow MCP capabilities](https://lightnow.ai/badge/io.github.AIDataNordic/nordic-financial-mcp)](https://lightnow.ai/servers/io.github.AIDataNordic/nordic-financial-mcp) [![nordic_financial_mcp MCP server](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp/badges/score.svg)](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp)
 
 A production-grade semantic search server for Nordic financial markets — built for autonomous AI agents. 1,000,000+ vectors across exchange filings, company reports, commodity prices, freight rates, energy data and press releases.
 
@@ -10,7 +10,7 @@ A production-grade semantic search server for Nordic financial markets — built
 
 **Live endpoint:** `https://mcp.aidatanorge.no/mcp`  
 **Transport:** `streamable-http`  
-**Registry:** [Smithery](https://smithery.ai/servers/kontakt-qy0g/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [Glama](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp) · [mcp.so](https://mcp.so)
+**Registry:** [LightNow](https://lightnow.ai/servers/io.github.AIDataNordic/nordic-financial-mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.AIDataNordic%2Fnordic-financial-mcp/versions) · [Glama](https://glama.ai/mcp/servers/AIDataNordic/nordic_financial_mcp) · [mcp.so](https://mcp.so)
 
 ---
 
